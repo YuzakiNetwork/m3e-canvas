@@ -51,28 +51,41 @@ const validItem = (item: unknown) =>
   optionalNumber(item.count) &&
   validTabs(item.tabs);
 
-const validLayout = (layout: unknown) =>
-  layout === undefined ||
-  (isRecord(layout) &&
-    layout.enabled === true &&
-    (layout.direction === "horizontal" || layout.direction === "vertical") &&
-    (layout.gap === undefined || (Number.isFinite(layout.gap) && (layout.gap as number) >= 0)) &&
-    (layout.align === undefined || layout.align === "start" || layout.align === "center" || layout.align === "end") &&
-    (layout.distribution === undefined ||
-      layout.distribution === "start" ||
-      layout.distribution === "center" ||
-      layout.distribution === "end" ||
-      layout.distribution === "spaceBetween") &&
-    (layout.padding === undefined ||
-      (isRecord(layout.padding) &&
-        ["top", "right", "bottom", "left"].every((key) => layout.padding[key] === undefined || (Number.isFinite(layout.padding[key]) && (layout.padding[key] as number) >= 0)))) &&
-    (layout.size === undefined ||
-      (isRecord(layout.size) &&
-        ["width", "height"].every(
-          (key) =>
-            layout.size[key] === undefined ||
-            (Number.isFinite(layout.size[key]) && (layout.size[key] as number) > 0),
-        )))),
+const finiteNonNegative = (value: unknown) => value === undefined || (Number.isFinite(value) && (value as number) >= 0);
+
+const finitePositive = (value: unknown) => value === undefined || (Number.isFinite(value) && (value as number) > 0);
+
+const validInsets = (value: unknown) =>
+  isRecord(value) &&
+  finiteNonNegative(value.top) &&
+  finiteNonNegative(value.right) &&
+  finiteNonNegative(value.bottom) &&
+  finiteNonNegative(value.left);
+
+const validLayoutSize = (value: unknown) =>
+  isRecord(value) &&
+  finitePositive(value.width) &&
+  finitePositive(value.height);
+
+const validLayout = (layout: unknown) => {
+  if (layout === undefined) return true;
+  if (!isRecord(layout) || layout.enabled !== true) return false;
+  if (layout.direction !== "horizontal" && layout.direction !== "vertical") return false;
+  if (!finiteNonNegative(layout.gap)) return false;
+  if (layout.align !== undefined && layout.align !== "start" && layout.align !== "center" && layout.align !== "end") return false;
+  if (
+    layout.distribution !== undefined &&
+    layout.distribution !== "start" &&
+    layout.distribution !== "center" &&
+    layout.distribution !== "end" &&
+    layout.distribution !== "spaceBetween"
+  ) {
+    return false;
+  }
+  if (layout.padding !== undefined && !validInsets(layout.padding)) return false;
+  if (layout.size !== undefined && !validLayoutSize(layout.size)) return false;
+  return true;
+};
 
 const validGroup = (group: unknown) =>
   isRecord(group) &&

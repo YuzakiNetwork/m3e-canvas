@@ -1,8 +1,18 @@
 import { CAROUSEL_LAYOUTS, DATE_LAYOUTS, Doc, KIND_ORDER, Kind, TIME_LAYOUTS, VARIANTS, isCardAlign, isCardImagePos, isPlace, isTextToken, isPlatform, isTrackThickness } from "./tokens";
 
-/* A project file is the Doc as JSON, nothing more. Reading one back only checks
- * the shape the editor relies on; the same migrations that run on a saved
- * document then bring an older file up to date. */
+/** Versioned on-disk format for m3e-canvas projects. */
+export const PROJECT_FORMAT = "m3e-project";
+export const PROJECT_VERSION = 1;
+
+type ProjectEnvelope = {
+  format: typeof PROJECT_FORMAT;
+  version: typeof PROJECT_VERSION;
+  document: Doc;
+};
+
+/* The editor still works with the plain Doc shape in memory. The envelope is
+ * only used at the file boundary, so adding fields to the project format does
+ * not force a rewrite of the editor state model. */
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
@@ -67,6 +77,26 @@ const validFrame = (frame: unknown) =>
 export const isProject = (value: unknown): value is Doc =>
   isRecord(value) && Array.isArray(value.groups) && Array.isArray(value.frames) && value.groups.every(validGroup) && value.frames.every(validFrame) && (value.platform === undefined || isPlatform(value.platform)) && (value.promptOptions === undefined || (Array.isArray(value.promptOptions) && value.promptOptions.every((o) => typeof o === "string")));
 
+const isProjectEnvelope = (value: unknown): value is ProjectEnvelope =>
+  isRecord(value) &&
+  value.format === PROJECT_FORMAT &&
+  value.version === PROJECT_VERSION &&
+  isProject(value.document);
+
+/** Serialize a document to the stable, versioned .m3e format. */
+export const serializeProject = (doc: Doc): string =>
+  JSON.stringify(
+    { format: PROJECT_FORMAT, version: PROJECT_VERSION, document: doc } satisfies ProjectEnvelope,
+    null,
+    2,
+  );
+
+/** Deserialize a .m3e project, while keeping backwards compatibility with legacy JSON docs. */
+export const deserializeProject = (value: unknown): Doc | null => {
+  if (isProjectEnvelope(value)) return value.document;
+  return isProject(value) ? value : null;
+};
+
 /** the file name a project is saved under: m3e-canvas, followed by the app's name when it has one */
 export const projectFileName = (doc: Doc) => {
   const name = doc.title
@@ -74,12 +104,12 @@ export const projectFileName = (doc: Doc) => {
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return name ? `m3e-canvas ${name}.json` : "m3e-canvas.json";
+  return name ? `m3e-canvas ${name}.m3e` : "m3e-canvas.m3e";
 };
 
 /** hands the document to the browser as a JSON download */
 export function saveProject(doc: Doc) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }));
+  const url = URL.createObjectURL(new Blob([serializeProject(doc)], { type: "application/json" }));
   const a = document.createElement("a");
   a.href = url;
   a.download = projectFileName(doc);
@@ -91,7 +121,7 @@ export function saveProject(doc: Doc) {
 export async function readProject(file: File): Promise<Doc | null> {
   try {
     const next: unknown = JSON.parse(await file.text());
-    return isProject(next) ? next : null;
+    return deserializeProject(next);
   } catch {
     return null;
   }

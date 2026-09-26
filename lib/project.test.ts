@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { isProject, projectFileName, readProject } from "./project";
+import { deserializeProject, isProject, projectFileName, PROJECT_FORMAT, PROJECT_VERSION, readProject, serializeProject } from "./project";
 import { updateRail } from "./rail";
 import { KIND_ORDER, VARIANTS, railExpansionSide, type Doc, type Item } from "./tokens";
 
@@ -132,13 +132,39 @@ describe("isProject", () => {
 
 describe("projectFileName", () => {
   it.each([
-    ["", "m3e-canvas.json"], [" \t\n ", "m3e-canvas.json"],
-    ['\\/:*?"<>|', "m3e-canvas.json"],
-    ["  My\t app\n name  ", "m3e-canvas My app name.json"],
-    ['a\\b/c:d*e?f"g<h>i|j', "m3e-canvas a b c d e f g h i j.json"],
-    ["設計 한국어 🎨.v2", "m3e-canvas 設計 한국어 🎨.v2.json"],
+    ["", "m3e-canvas.m3e"], [" \t\n ", "m3e-canvas.m3e"],
+    ['\\/:*?"<>|', "m3e-canvas.m3e"],
+    ["  My\t app\n name  ", "m3e-canvas My app name.m3e"],
+    ['a\\b/c:d*e?f"g<h>i|j', "m3e-canvas a b c d e f g h i j.m3e"],
+    ["設計 한국어 🎨.v2", "m3e-canvas 設計 한국어 🎨.v2.m3e"],
   ])("sanitizes %j to %j", (title, expected) => {
     expect(projectFileName({ ...doc(), title })).toBe(expected);
+  });
+});
+
+describe("versioned project format", () => {
+  it("serializes a document with a stable format and version", () => {
+    const parsed = JSON.parse(serializeProject(doc()));
+    expect(parsed).toEqual({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      document: doc(),
+    });
+  });
+
+  it("deserializes the current envelope", () => {
+    const value = doc();
+    expect(deserializeProject({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      document: value,
+    })).toEqual(value);
+  });
+
+  it("rejects an unknown format or version", () => {
+    const value = doc();
+    expect(deserializeProject({ format: "other", version: PROJECT_VERSION, document: value })).toBeNull();
+    expect(deserializeProject({ format: PROJECT_FORMAT, version: 999, document: value })).toBeNull();
   });
 });
 

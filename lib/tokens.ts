@@ -2238,11 +2238,12 @@ export function layoutOf(g: Group, widths: Record<string, number>): Placed[] {
   const contentCross = Math.max(0, ...cross);
   const distribution = layout?.distribution ?? "start";
   const alignment = layout?.align ?? "start";
-
-  /* Auto layout is content-sized: distribution only affects the origin/gaps when the
-   * group's implicit content box has room. Padding provides that explicit room. */
-  const availableMain = contentMain + (horizontal ? pad.left + pad.right : pad.top + pad.bottom);
-  const extraMain = Math.max(0, availableMain - contentMain - (horizontal ? pad.left + pad.right : pad.top + pad.bottom));
+  const requestedMain = horizontal ? layout?.size?.width : layout?.size?.height;
+  const requestedCross = horizontal ? layout?.size?.height : layout?.size?.width;
+  const mainSize = Math.max(contentMain, requestedMain ?? 0);
+  const crossSize = Math.max(contentCross, requestedCross ?? 0);
+  const innerMain = Math.max(0, mainSize - (horizontal ? pad.left + pad.right : pad.top + pad.bottom));
+  const extraMain = Math.max(0, innerMain - contentMain);
   let cursor = horizontal ? pad.left : pad.top;
   if (distribution === "center") cursor += extraMain / 2;
   else if (distribution === "end") cursor += extraMain;
@@ -2250,7 +2251,7 @@ export function layoutOf(g: Group, widths: Record<string, number>): Placed[] {
 
   g.items.forEach((it, index) => {
     const sz = sizes[index];
-    const crossOffset = alignment === "center" ? (contentCross - cross[index]) / 2 : alignment === "end" ? contentCross - cross[index] : 0;
+    const crossOffset = alignment === "center" ? (crossSize - cross[index]) / 2 : alignment === "end" ? crossSize - cross[index] : 0;
     const x = horizontal ? g.x + cursor : g.x + pad.left + crossOffset;
     const y = horizontal ? g.y + pad.top + crossOffset : g.y + cursor;
     out.push({ item: it, index, x: Math.round(x), y: Math.round(y), w: sz.w, h: sz.h });
@@ -2270,6 +2271,10 @@ export function groupBounds(g: Group, widths: Record<string, number>) {
     t = Math.min(t, pl.y);
     r = Math.max(r, pl.x + pl.w);
     b = Math.max(b, pl.y + pl.h);
+  }
+  if (g.layout?.enabled && g.layout.size) {
+    r = Math.max(r, g.x + (g.layout.size.width ?? 0));
+    b = Math.max(b, g.y + (g.layout.size.height ?? 0));
   }
   return { l, t, r, b };
 }
@@ -2362,6 +2367,8 @@ export type AutoLayout = {
   padding?: { top?: number; right?: number; bottom?: number; left?: number };
   align?: AutoLayoutAlignment;
   distribution?: AutoLayoutDistribution;
+  /** Optional container size. Without it, auto layout remains content-sized. */
+  size?: { width?: number; height?: number };
 };
 
 export type Group = {

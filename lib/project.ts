@@ -51,6 +51,22 @@ const validItem = (item: unknown) =>
   optionalNumber(item.count) &&
   validTabs(item.tabs);
 
+const validLayout = (layout: unknown) =>
+  layout === undefined ||
+  (isRecord(layout) &&
+    layout.enabled === true &&
+    (layout.direction === "horizontal" || layout.direction === "vertical") &&
+    (layout.gap === undefined || (Number.isFinite(layout.gap) && (layout.gap as number) >= 0)) &&
+    (layout.align === undefined || layout.align === "start" || layout.align === "center" || layout.align === "end") &&
+    (layout.distribution === undefined ||
+      layout.distribution === "start" ||
+      layout.distribution === "center" ||
+      layout.distribution === "end" ||
+      layout.distribution === "spaceBetween") &&
+    (layout.padding === undefined ||
+      (isRecord(layout.padding) &&
+        ["top", "right", "bottom", "left"].every((key) => layout.padding[key] === undefined || (Number.isFinite(layout.padding[key]) && (layout.padding[key] as number) >= 0)))));
+
 const validGroup = (group: unknown) =>
   isRecord(group) &&
   typeof group.id === "string" &&
@@ -58,6 +74,7 @@ const validGroup = (group: unknown) =>
   Number.isFinite(group.y) &&
   (group.axis === "x" || group.axis === "y") &&
   (group.locked === undefined || typeof group.locked === "boolean") &&
+  validLayout(group.layout) &&
   Array.isArray(group.items) &&
   group.items.length > 0 &&
   group.items.every(validItem);

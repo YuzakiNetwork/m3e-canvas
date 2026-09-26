@@ -56,6 +56,37 @@ describe("isProject", () => {
     expect(isProject({ ...value, groups: [{ ...value.groups[0], locked }] })).toBe(true);
   });
 
+  it("accepts auto layout configuration", () => {
+    const value = doc();
+    value.groups[0].layout = {
+      enabled: true,
+      direction: "horizontal",
+      gap: 12,
+      padding: { top: 8, right: 16, bottom: 8, left: 16 },
+      align: "center",
+      distribution: "spaceBetween",
+      size: { width: 240, height: 100 },
+    };
+    expect(isProject(value)).toBe(true);
+    expect(deserializeProject({ format: PROJECT_FORMAT, version: PROJECT_VERSION, document: value })).toEqual(value);
+  });
+
+  it.each([
+    { enabled: false },
+    { direction: "diagonal" },
+    { gap: -1 },
+    { gap: "8" },
+    { align: "middle" },
+    { distribution: "around" },
+    { padding: { left: -1 } },
+    { size: { width: 0 } },
+    { size: { height: "100" } },
+  ])("rejects invalid auto layout %# %o", (layout) => {
+    const value = doc();
+    value.groups[0].layout = layout as never;
+    expect(isProject(value)).toBe(false);
+  });
+
   it.each([
     { id: 1 }, { x: NaN }, { x: Infinity }, { x: "0" }, { y: -Infinity }, { y: null },
     { axis: "z" }, { axis: undefined }, { items: [] }, { items: null }, { items: {} }, { items: [null] },

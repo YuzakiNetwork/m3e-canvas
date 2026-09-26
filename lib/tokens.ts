@@ -2212,16 +2212,50 @@ export type Placed = { item: Item; index: number; x: number; y: number; w: numbe
  *  out along its axis, a free group keeps the offsets it was grouped with */
 export function layoutOf(g: Group, widths: Record<string, number>): Placed[] {
   const out: Placed[] = [];
-  let off = 0;
-  g.items.forEach((it, index) => {
-    const sz = sizeOf(it, widths);
-    if (g.free) {
+  if (g.free) {
+    g.items.forEach((it, index) => {
+      const sz = sizeOf(it, widths);
       const o = g.pos?.[it.id] ?? { x: 0, y: 0 };
       out.push({ item: it, index, x: g.x + o.x, y: g.y + o.y, w: sz.w, h: sz.h });
-      return;
-    }
-    out.push({ item: it, index, x: g.axis === "x" ? g.x + off : g.x, y: g.axis === "x" ? g.y : g.y + off, w: sz.w, h: sz.h });
-    off += (g.axis === "x" ? sz.w : sz.h) + GAP;
+    });
+    return out;
+  }
+
+  const layout = g.layout?.enabled ? g.layout : undefined;
+  const direction = layout?.direction ?? (g.axis === "x" ? "horizontal" : "vertical");
+  const horizontal = direction === "horizontal";
+  const gap = Math.max(0, layout?.gap ?? GAP);
+  const pad = {
+    top: Math.max(0, layout?.padding?.top ?? 0),
+    right: Math.max(0, layout?.padding?.right ?? 0),
+    bottom: Math.max(0, layout?.padding?.bottom ?? 0),
+    left: Math.max(0, layout?.padding?.left ?? 0),
+  };
+  const sizes = g.items.map((it) => sizeOf(it, widths));
+  const main = sizes.map((s) => horizontal ? s.w : s.h);
+  const cross = sizes.map((s) => horizontal ? s.h : s.w);
+  const contentMain = main.reduce((sum, v) => sum + v, 0) + gap * Math.max(0, main.length - 1);
+  const contentCross = Math.max(0, ...cross);
+  const distribution = layout?.distribution ?? "start";
+  const alignment = layout?.align ?? "start";
+  const requestedMain = horizontal ? layout?.size?.width : layout?.size?.height;
+  const requestedCross = horizontal ? layout?.size?.height : layout?.size?.width;
+  const mainSize = Math.max(contentMain, requestedMain ?? 0);
+  const crossSize = Math.max(contentCross, requestedCross ?? 0);
+  const innerMain = Math.max(0, mainSize - (horizontal ? pad.left + pad.right : pad.top + pad.bottom));
+  const extraMain = Math.max(0, innerMain - contentMain);
+  let cursor = horizontal ? pad.left : pad.top;
+  if (distribution === "center") cursor += extraMain / 2;
+  else if (distribution === "end") cursor += extraMain;
+  const between = distribution === "spaceBetween" && main.length > 1 ? gap + extraMain / (main.length - 1) : gap;
+
+  g.items.forEach((it, index) => {
+    const sz = sizes[index];
+    const crossOffset = alignment === "center" ? (crossSize - cross[index]) / 2 : alignment === "end" ? crossSize - cross[index] : 0;
+    const x = horizontal ? g.x + cursor : g.x + pad.left + crossOffset;
+    const y = horizontal ? g.y + pad.top + crossOffset : g.y + cursor;
+    out.push({ item: it, index, x: Math.round(x), y: Math.round(y), w: sz.w, h: sz.h });
+    cursor += main[index] + between;
   });
   return out;
 }
@@ -2237,6 +2271,10 @@ export function groupBounds(g: Group, widths: Record<string, number>) {
     t = Math.min(t, pl.y);
     r = Math.max(r, pl.x + pl.w);
     b = Math.max(b, pl.y + pl.h);
+  }
+  if (g.layout?.enabled && g.layout.size) {
+    r = Math.max(r, g.x + (g.layout.size.width ?? 0));
+    b = Math.max(b, g.y + (g.layout.size.height ?? 0));
   }
   return { l, t, r, b };
 }
@@ -2317,6 +2355,22 @@ export function frameOfGroup(g: Group, frames: Frame[], widths: Record<string, n
 export const groupsInFrame = (groups: Group[], f: Frame, frames: Frame[], widths: Record<string, number>) =>
   groups.filter((g) => frameOfGroup(g, frames, widths)?.id === f.id);
 
+export type AutoLayoutDirection = "horizontal" | "vertical";
+export type AutoLayoutAlignment = "start" | "center" | "end";
+export type AutoLayoutDistribution = "start" | "center" | "end" | "spaceBetween";
+
+export type AutoLayout = {
+  /** Enables deterministic layout inside the group instead of the legacy GAP-based run layout. */
+  enabled: boolean;
+  direction: AutoLayoutDirection;
+  gap?: number;
+  padding?: { top?: number; right?: number; bottom?: number; left?: number };
+  align?: AutoLayoutAlignment;
+  distribution?: AutoLayoutDistribution;
+  /** Optional container size. Without it, auto layout remains content-sized. */
+  size?: { width?: number; height?: number };
+};
+
 export type Group = {
   id: string;
   x: number;
@@ -2328,6 +2382,8 @@ export type Group = {
   /** a hand-made group: parts keep their own offsets (in `pos`) and move as one layer */
   free?: boolean;
   pos?: Record<string, { x: number; y: number }>;
+  /** Optional explicit auto-layout rules. Omitted preserves the legacy connected-run behavior. */
+  layout?: AutoLayout;
 };
 
 export type FrameMode = "blank" | "phone";

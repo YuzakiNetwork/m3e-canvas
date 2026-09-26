@@ -72,7 +72,7 @@ const validLayout = (layout: unknown) =>
           (key) =>
             layout.size[key] === undefined ||
             (Number.isFinite(layout.size[key]) && (layout.size[key] as number) > 0),
-        ))),
+        )))),
 
 const validGroup = (group: unknown) =>
   isRecord(group) &&

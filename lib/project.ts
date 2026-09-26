@@ -65,7 +65,10 @@ const validLayout = (layout: unknown) =>
       layout.distribution === "spaceBetween") &&
     (layout.padding === undefined ||
       (isRecord(layout.padding) &&
-        ["top", "right", "bottom", "left"].every((key) => layout.padding[key] === undefined || (Number.isFinite(layout.padding[key]) && (layout.padding[key] as number) >= 0)))));
+        ["top", "right", "bottom", "left"].every((key) => layout.padding[key] === undefined || (Number.isFinite(layout.padding[key]) && (layout.padding[key] as number) >= 0)))) &&
+    (layout.size === undefined ||
+      (isRecord(layout.size) &&
+        ["width", "height"].every((key) => layout.size[key] === undefined || (Number.isFinite(layout.size[key]) && (layout.size[key] as number) > 0))));
 
 const validGroup = (group: unknown) =>
   isRecord(group) &&

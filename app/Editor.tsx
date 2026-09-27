@@ -126,10 +126,12 @@ import { AiSettings, DEFAULT_AI, hasKey, isSecureUrl, loadAiSettings, proposeBeh
 import { barSlotOf, bodyRect, carryFrame, pullInto, tidyFrame } from "@/lib/tidy";
 import { constrainModalRails, modalRailOf, updateRail } from "@/lib/rail";
 import { isProject, readProject, saveProject } from "@/lib/project";
-import { hasShareHash, readShareHash } from "@/lib/share";
+import { hasShareHash, readShareHash, shareLink } from "@/lib/share";
+import { collaborationLink, createRoomId, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
 import { LoadingIndicator } from "@/components/Loading";
 import { draftDesign } from "@/lib/ai";
 import { ShareDialog } from "@/components/ShareMenu";
+import { CollaborationDialog } from "@/components/CollaborationDialog";
 import { ColorPanel } from "@/components/ColorPanel";
 import { MotionPanel, ShapePanel, TypePanel } from "@/components/ThemePanel";
 import { ThemeContext, ensureFontLoaded, ensureLangFontLoaded } from "@/lib/theme";
@@ -478,6 +480,14 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   /** a project file waiting for the author to confirm replacing the canvas */
   const [pendingImport, setPendingImport] = useState<Doc | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [collabOpen, setCollabOpen] = useState(false);
+  const [collabRoom, setCollabRoom] = useState<string | null>(null);
+  const [collabLink, setCollabLink] = useState<string | null>(null);
+  const [collabUsers, setCollabUsers] = useState<Collaborator[]>([]);
+  const [collabStatus, setCollabStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const collabSessionRef = useRef<CollaborationSession | null>(null);
+  const collabApplyingRef = useRef(false);
+  const collabBroadcastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** the idea typed into the "ask an AI" dialog; kept here so a failed draft does not lose it */
   const [ideaText, setIdeaText] = useState("");
   /** a model is drafting a design right now */
@@ -2602,6 +2612,68 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     queueMicrotask(() => fitRef.current());
   };
 
+  /* Realtime collaboration is opt-in: a room is encoded alongside the existing
+     compressed design link. The current room uses snapshot sync; the editor remains usable
+     without Supabase configuration. */
+  useEffect(() => {
+    if (editAccess !== "editable" || typeof window === "undefined") return;
+    const room = roomFromHash(window.location.hash);
+    if (!room) return;
+    let active = true;
+    setCollabRoom(room);
+    setCollabOpen(true);
+    setCollabStatus("connecting");
+    void openCollaboration(room, docRef.current, {
+      onDocument: (next) => { if (!active) return; collabApplyingRef.current = true; importDoc(next); },
+      onPresence: setCollabUsers,
+      onStatus: (status) => { if (active) setCollabStatus(status); },
+    }).then((session) => {
+      if (!active) { void session?.close(); return; }
+      collabSessionRef.current = session;
+      setCollabStatus(session ? "connected" : "error");
+      session?.requestSync();
+    });
+    return () => {
+      active = false;
+      if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current);
+      const session = collabSessionRef.current;
+      collabSessionRef.current = null;
+      if (session) void session.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editAccess]);
+
+  const createCollaboration = async () => {
+    if (!isCollaborationConfigured()) { setCollabOpen(true); setCollabStatus("error"); return; }
+    const room = createRoomId();
+    const base = `${window.location.origin}${BASE_PATH}/`;
+    const plain = await shareLink(docRef.current, base);
+    const link = collaborationLink(plain, room);
+    setCollabRoom(room); setCollabLink(link); setCollabOpen(true); setCollabStatus("connecting");
+    const old = collabSessionRef.current;
+    if (old) await old.close();
+    const session = await openCollaboration(room, docRef.current, {
+      onDocument: (next) => { collabApplyingRef.current = true; importDoc(next); },
+      onPresence: setCollabUsers,
+      onStatus: (status) => setCollabStatus(status),
+    });
+    collabSessionRef.current = session;
+    if (session) {
+      setCollabUsers((users) => users.some((u) => u.key === session.identity.key) ? users : [...users, session.identity]);
+      session.requestSync();
+    } else setCollabStatus("error");
+    try { window.history.replaceState(null, "", link); } catch {}
+  };
+
+  const leaveCollaboration = async () => {
+    const session = collabSessionRef.current;
+    collabSessionRef.current = null;
+    if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current);
+    if (session) await session.close();
+    setCollabRoom(null); setCollabLink(null); setCollabUsers([]); setCollabStatus("idle"); setCollabOpen(false);
+    clearShareHash();
+  };
+
   /* A link with a design in its hash offers it once the editor is ready to take it,
      whether the page opened on that link or the link was pasted into this tab. */
   useEffect(() => {
@@ -3414,6 +3486,19 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   /** the same document, for callbacks that were created on an earlier render */
   const docRef = useRef(doc);
   docRef.current = doc;
+
+  useEffect(() => {
+    if (!loadedRef.current || !collabSessionRef.current || collabApplyingRef.current) {
+      collabApplyingRef.current = false;
+      return;
+    }
+    if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current);
+    collabBroadcastTimer.current = setTimeout(() => {
+      collabBroadcastTimer.current = null;
+      collabSessionRef.current?.sendDocument(doc);
+    }, 120);
+    return () => { if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current); };
+  }, [doc]);
 
   /** arrows from tappable parts to the frames they open */
   const links = useMemo(() => {
@@ -4802,8 +4887,24 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             setLeftOpen(true);
             setLeftTab("ai");
           }}
+          onCollaborate={() => {
+            setShareOpen(false);
+            setCollabOpen(true);
+          }}
         />
 
+        <CollaborationDialog
+          p={p}
+          open={collabOpen}
+          roomId={collabRoom}
+          users={collabUsers}
+          configured={isCollaborationConfigured()}
+          link={collabLink}
+          onClose={() => setCollabOpen(false)}
+          onCreate={() => void createCollaboration()}
+          onCopy={() => { if (collabLink) void navigator.clipboard.writeText(collabLink); }}
+          onLeave={() => void leaveCollaboration()}
+        />
 
         <ConfirmDialog
           open={confirmClear}

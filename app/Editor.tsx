@@ -2624,7 +2624,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     setCollabLink(window.location.href);
     setCollabOpen(true);
     setCollabStatus("connecting");
-    void openCollaboration(room, docRef.current, {
+    void openCollaboration(room, () => docRef.current, {
       onDocument: (next) => { if (!active) return; collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
       onPresence: setCollabUsers,
       onStatus: (status) => { if (active) setCollabStatus(status); },
@@ -2653,7 +2653,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     setCollabRoom(room); setCollabLink(link); setCollabOpen(true); setCollabStatus("connecting");
     const old = collabSessionRef.current;
     if (old) await old.close();
-    const session = await openCollaboration(room, docRef.current, {
+    const session = await openCollaboration(room, () => docRef.current, {
       onDocument: (next) => { collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
       onPresence: setCollabUsers,
       onStatus: (status) => setCollabStatus(status),

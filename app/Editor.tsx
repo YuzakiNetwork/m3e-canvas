@@ -127,7 +127,7 @@ import { barSlotOf, bodyRect, carryFrame, pullInto, tidyFrame } from "@/lib/tidy
 import { constrainModalRails, modalRailOf, updateRail } from "@/lib/rail";
 import { isProject, readProject, saveProject } from "@/lib/project";
 import { hasShareHash, readShareHash, shareLink } from "@/lib/share";
-import { collaborationLink, createRoomId, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
+import { collaborationLink, createCollaborationRoom, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
 import { LoadingIndicator } from "@/components/Loading";
 import { draftDesign } from "@/lib/ai";
 import { ShareDialog } from "@/components/ShareMenu";
@@ -2646,24 +2646,31 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
 
   const createCollaboration = async () => {
     if (!isCollaborationConfigured()) { setCollabOpen(true); setCollabStatus("error"); return; }
-    const room = createRoomId();
-    const base = `${window.location.origin}${BASE_PATH}/`;
-    const plain = await shareLink(docRef.current, base);
-    const link = collaborationLink(plain, room);
-    setCollabRoom(room); setCollabLink(link); setCollabOpen(true); setCollabStatus("connecting");
-    const old = collabSessionRef.current;
-    if (old) await old.close();
-    const session = await openCollaboration(room, () => docRef.current, {
-      onDocument: (next) => { collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
-      onPresence: setCollabUsers,
-      onStatus: (status) => setCollabStatus(status),
-    });
-    collabSessionRef.current = session;
-    if (session) {
-      setCollabUsers((users) => users.some((u) => u.key === session.identity.key) ? users : [...users, session.identity]);
-      session.requestSync();
-    } else setCollabStatus("error");
-    try { window.history.replaceState(null, "", link); } catch {}
+    setCollabStatus("connecting");
+    try {
+      const room = await createCollaborationRoom();
+      const base = `${window.location.origin}${BASE_PATH}/`;
+      const plain = await shareLink(docRef.current, base);
+      const link = collaborationLink(plain, room);
+      setCollabRoom(room); setCollabLink(link); setCollabOpen(true);
+      const old = collabSessionRef.current;
+      if (old) await old.close();
+      const session = await openCollaboration(room, () => docRef.current, {
+        onDocument: (next) => { collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
+        onPresence: setCollabUsers,
+        onStatus: (status) => setCollabStatus(status),
+      });
+      collabSessionRef.current = session;
+      if (session) {
+        setCollabUsers((users) => users.some((u) => u.key === session.identity.key) ? users : [...users, session.identity]);
+        session.requestSync();
+      } else setCollabStatus("error");
+      try { window.history.replaceState(null, "", link); } catch {}
+    } catch (error) {
+      console.error("M3E collaboration setup failed:", error);
+      setCollabStatus("error");
+      setToast(error instanceof Error ? error.message : "Unable to create collaboration room.");
+    }
   };
 
   const leaveCollaboration = async () => {

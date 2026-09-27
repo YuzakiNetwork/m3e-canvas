@@ -88,7 +88,7 @@ export type CollaborationSession = {
 
 export async function openCollaboration(
   roomId: string,
-  initialDoc: Doc,
+  getDocument: () => Doc,
   callbacks: {
     onDocument: (doc: Doc) => void;
     onPresence: (users: Collaborator[]) => void;
@@ -119,7 +119,7 @@ export async function openCollaboration(
       void channel.send({
         type: "broadcast",
         event: EVENT_DOC,
-        payload: { doc: initialDoc },
+        payload: { doc: getDocument() },
       });
     })
     .on("presence", { event: "sync" }, emitPresence)

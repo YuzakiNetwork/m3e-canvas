@@ -1,4 +1,4 @@
-import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import type { Doc } from "./tokens";
 
 export type Collaborator = {
@@ -7,10 +7,7 @@ export type Collaborator = {
   color: string;
 };
 
-type PresencePayload = {
-  name?: unknown;
-  color?: unknown;
-};
+type PresencePayload = { name?: unknown; color?: unknown };
 
 const ROOM_PARAM = "room";
 const EVENT_DOC = "doc";
@@ -39,7 +36,9 @@ export const roomFromHash = (hash: string): string | null => {
 };
 
 export const collaborationLink = (shareUrl: string, roomId: string) =>
-  shareUrl.includes("#") ? `${shareUrl}&${ROOM_PARAM}=${encodeURIComponent(roomId)}` : `${shareUrl}#${ROOM_PARAM}=${encodeURIComponent(roomId)}`;
+  shareUrl.includes("#")
+    ? `${shareUrl}&${ROOM_PARAM}=${encodeURIComponent(roomId)}`
+    : `${shareUrl}#${ROOM_PARAM}=${encodeURIComponent(roomId)}`;
 
 const randomColor = () => {
   const hue = Math.floor(Math.random() * 360);
@@ -62,6 +61,52 @@ const readIdentity = () => {
   } catch {}
   return fallback;
 };
+
+const ensureAuthenticated = async (supabase: SupabaseClient) => {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (data.session) return data.session;
+
+  const { data: anonymous, error: signInError } = await supabase.auth.signInAnonymously();
+  if (signInError || !anonymous.session) {
+    throw signInError ?? new Error("Anonymous authentication is not enabled.");
+  }
+  return anonymous.session;
+};
+
+const joinRoom = async (supabase: SupabaseClient, roomId: string, userId: string, role = "editor") => {
+  const { error } = await supabase
+    .from("collab_room_members")
+    .upsert(
+      { room_id: roomId, user_id: userId, role },
+      { onConflict: "room_id,user_id", ignoreDuplicates: true },
+    );
+  if (error) throw error;
+};
+
+export async function createCollaborationRoom(): Promise<string> {
+  const env = getEnv();
+  if (!env) throw new Error("Supabase is not configured.");
+
+  const supabase = createClient(env.url, env.key);
+  const session = await ensureAuthenticated(supabase);
+  const roomId = createRoomId();
+
+  const { error } = await supabase.from("collab_rooms").insert({
+    id: roomId,
+    owner_id: session.user.id,
+  });
+  if (error) throw error;
+
+  try {
+    await joinRoom(supabase, roomId, session.user.id, "owner");
+  } catch (error) {
+    await supabase.from("collab_rooms").delete().eq("id", roomId);
+    throw error;
+  }
+
+  return roomId;
+}
 
 const presenceUsers = (channel: RealtimeChannel): Collaborator[] => {
   const state = channel.presenceState() as Record<string, PresencePayload[]>;
@@ -100,8 +145,18 @@ export async function openCollaboration(
 
   const supabase = createClient(env.url, env.key);
   const identity = readIdentity();
+
+  try {
+    const session = await ensureAuthenticated(supabase);
+    await joinRoom(supabase, roomId, session.user.id);
+  } catch (error) {
+    callbacks.onStatus?.("error");
+    throw error;
+  }
+
   const channel = supabase.channel(`m3e:room:${roomId}`, {
     config: {
+      private: true,
       broadcast: { self: false },
       presence: { key: identity.key },
     },
@@ -128,8 +183,8 @@ export async function openCollaboration(
 
   callbacks.onStatus?.("connecting");
 
-  await new Promise<void>((resolve) => {
-    channel.subscribe(async (status) => {
+  await new Promise<void>((resolve, reject) => {
+    channel.subscribe(async (status, error) => {
       if (status === "SUBSCRIBED") {
         await channel.track({
           name: identity.name,
@@ -141,7 +196,7 @@ export async function openCollaboration(
         resolve();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         callbacks.onStatus?.("error");
-        resolve();
+        reject(error ?? new Error(`Realtime channel failed: ${status}`));
       }
     });
   });

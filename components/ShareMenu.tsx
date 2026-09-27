@@ -61,6 +61,7 @@ export function ShareDialog({
   onClose,
   onDraft,
   onSetupAi,
+  onCollaborate,
 }: {
   p: Palette;
   doc: Doc;
@@ -74,6 +75,7 @@ export function ShareDialog({
   onDraft: (idea: string) => void;
   /** opens the AI settings so a key can be entered */
   onSetupAi: () => void;
+  onCollaborate: () => void;
 }) {
   const lang = useLang();
   const [copied, setCopied] = useState<"ask" | "link" | null>(null);
@@ -187,6 +189,7 @@ export function ShareDialog({
               <Beta p={p} />
               <span style={{ flex: 1 }} />
               {pill(copied === "link" ? "check" : "link", copied === "link" ? t("copied", lang) : t("shareLinkCopy", lang), copyLink, { title: t("shareLinkHint", lang) })}
+              {pill("group", "Collaborate", onCollaborate, { primary: true, title: "Edit this design together" })}
             </div>
             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: p.onSurfaceVariant }}>{t("askAiHint", lang)}</p>
             <textarea

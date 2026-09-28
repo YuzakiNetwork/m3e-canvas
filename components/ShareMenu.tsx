@@ -189,7 +189,7 @@ export function ShareDialog({
               <Beta p={p} />
               <span style={{ flex: 1 }} />
               {pill(copied === "link" ? "check" : "link", copied === "link" ? t("copied", lang) : t("shareLinkCopy", lang), copyLink, { title: t("shareLinkHint", lang) })}
-              {pill("group", "Collaborate", onCollaborate, { primary: true, title: "Edit this design together" })}
+              {pill("group", t("collaborate", lang), onCollaborate, { primary: true, title: t("collabHint", lang) })}
             </div>
             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: p.onSurfaceVariant }}>{t("askAiHint", lang)}</p>
             <textarea

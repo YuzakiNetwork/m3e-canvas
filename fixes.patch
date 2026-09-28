@@ -1,0 +1,462 @@
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index 3d06ff4..b2f90e7 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -29,6 +29,11 @@ jobs:
+         run: npm run build
+         env:
+           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
++          # Optional: only set if you want realtime collaboration on the deployed
++          # site. Add both as repo secrets (Settings > Secrets and variables >
++          # Actions). See supabase/schema.sql for the matching database setup.
++          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
++          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+       - run: touch out/.nojekyll
+       - uses: actions/upload-pages-artifact@v5
+         with:
+diff --git a/.gitignore b/.gitignore
+index dbc6837..ea989fb 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -32,6 +32,7 @@ yarn-error.log*
+ 
+ # env files (can opt-in for committing if needed)
+ .env*
++!.env.example
+ 
+ # vercel
+ .vercel
+diff --git a/app/Editor.tsx b/app/Editor.tsx
+index 3122d25..08aa18a 100644
+--- a/app/Editor.tsx
++++ b/app/Editor.tsx
+@@ -2669,7 +2669,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+     } catch (error) {
+       console.error("M3E collaboration setup failed:", error);
+       setCollabStatus("error");
+-      setToast(error instanceof Error ? error.message : "Unable to create collaboration room.");
++      showToast(error instanceof Error ? error.message : t("collabCreateError", lang));
+     }
+   };
+ 
+diff --git a/components/CollaborationDialog.tsx b/components/CollaborationDialog.tsx
+index 76f074f..f29098b 100644
+--- a/components/CollaborationDialog.tsx
++++ b/components/CollaborationDialog.tsx
+@@ -3,6 +3,7 @@
+ import { useEffect, useState } from "react";
+ import type { Palette } from "@/lib/tokens";
+ import type { Collaborator } from "@/lib/collaboration";
++import { t, useLang } from "@/lib/i18n";
+ 
+ type Props = {
+   p: Palette;
+@@ -30,6 +31,7 @@ export function CollaborationDialog({
+   onLeave,
+ }: Props) {
+   const [copied, setCopied] = useState(false);
++  const lang = useLang();
+ 
+   useEffect(() => {
+     if (!open) setCopied(false);
+@@ -47,7 +49,7 @@ export function CollaborationDialog({
+     <div
+       role="dialog"
+       aria-modal="true"
+-      aria-label="Collaborate"
++      aria-label={t("collaborate", lang)}
+       onClick={onClose}
+       style={{
+         position: "fixed",
+@@ -76,23 +78,23 @@ export function CollaborationDialog({
+         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+           <div style={{ width: 44, height: 44, borderRadius: 16, background: p.primaryContainer, color: p.onPrimaryContainer, display: "grid", placeItems: "center", fontSize: 22 }}>✦</div>
+           <div style={{ flex: 1 }}>
+-            <div style={{ fontSize: 22, fontWeight: 700 }}>Collaborate</div>
+-            <div style={{ fontSize: 13, color: p.onSurfaceVariant }}>Edit this design together in realtime.</div>
++            <div style={{ fontSize: 22, fontWeight: 700 }}>{t("collaborate", lang)}</div>
++            <div style={{ fontSize: 13, color: p.onSurfaceVariant }}>{t("collabSubtitle", lang)}</div>
+           </div>
+-          <button onClick={onClose} aria-label="Close" style={{ border: 0, background: "transparent", color: p.onSurfaceVariant, fontSize: 22, cursor: "pointer" }}>×</button>
++          <button onClick={onClose} aria-label={t("close", lang)} style={{ border: 0, background: "transparent", color: p.onSurfaceVariant, fontSize: 22, cursor: "pointer" }}>×</button>
+         </div>
+ 
+         {!configured ? (
+           <div style={{ padding: 16, borderRadius: 18, background: p.errorContainer, color: p.onErrorContainer, fontSize: 13, lineHeight: 1.55 }}>
+-            Collaboration is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.
++            {t("collabNotConfigured", lang)}
+           </div>
+         ) : !roomId ? (
+           <>
+             <p style={{ margin: 0, color: p.onSurfaceVariant, fontSize: 14, lineHeight: 1.55 }}>
+-              Create a collaboration room and share the generated link. Anyone with the link can edit the project while the room is active.
++              {t("collabIntro", lang)}
+             </p>
+             <button onClick={onCreate} className="m3-press" style={{ height: 48, border: 0, borderRadius: 24, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: "pointer" }}>
+-              Create collaboration link
++              {t("collabCreate", lang)}
+             </button>
+           </>
+         ) : (
+@@ -103,24 +105,24 @@ export function CollaborationDialog({
+                   {user.name.slice(0, 1).toUpperCase()}
+                 </span>
+               ))}
+-              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>{users.length} online</span>
++              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>{t("collabOnline", lang).replace("{n}", String(users.length))}</span>
+             </div>
+             <div style={{ padding: 14, borderRadius: 16, background: p.surfaceContainerLow, fontSize: 12, lineHeight: 1.5, wordBreak: "break-all" }}>
+               {link}
+             </div>
+             <div style={{ display: "flex", gap: 8 }}>
+               <button onClick={() => { onCopy(); setCopied(true); }} className="m3-press" style={{ flex: 1, height: 44, border: 0, borderRadius: 22, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: "pointer" }}>
+-                {copied ? "Copied" : "Copy link"}
++                {copied ? t("copied", lang) : t("collabCopyLink", lang)}
+               </button>
+               <button onClick={onLeave} className="m3-press" style={{ height: 44, padding: "0 18px", border: 0, borderRadius: 22, background: p.secondaryContainer, color: p.onSecondaryContainer, fontWeight: 700, cursor: "pointer" }}>
+-                Leave
++                {t("collabLeave", lang)}
+               </button>
+             </div>
+           </>
+         )}
+ 
+         <div style={{ fontSize: 12, color: p.onSurfaceVariant, lineHeight: 1.5 }}>
+-          Tip: this first collaboration version syncs the document snapshot. Later we can move the same room to a CRDT for finer-grained conflict merging.
++          {t("collabTip", lang)}
+         </div>
+       </section>
+     </div>
+diff --git a/components/ShareMenu.tsx b/components/ShareMenu.tsx
+index a3d60d0..a795fc6 100644
+--- a/components/ShareMenu.tsx
++++ b/components/ShareMenu.tsx
+@@ -189,7 +189,7 @@ export function ShareDialog({
+               <Beta p={p} />
+               <span style={{ flex: 1 }} />
+               {pill(copied === "link" ? "check" : "link", copied === "link" ? t("copied", lang) : t("shareLinkCopy", lang), copyLink, { title: t("shareLinkHint", lang) })}
+-              {pill("group", "Collaborate", onCollaborate, { primary: true, title: "Edit this design together" })}
++              {pill("group", t("collaborate", lang), onCollaborate, { primary: true, title: t("collabHint", lang) })}
+             </div>
+             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: p.onSurfaceVariant }}>{t("askAiHint", lang)}</p>
+             <textarea
+diff --git a/lib/auto-layout.test.ts b/lib/auto-layout.test.ts
+index bffd227..b36081a 100644
+--- a/lib/auto-layout.test.ts
++++ b/lib/auto-layout.test.ts
+@@ -1,7 +1,7 @@
+ import { describe, expect, it } from "vitest";
+ import { groupBounds, layoutOf, makeItem, type Group } from "./tokens";
+ 
+-const button = (id: string) => ({ ...makeItem("button"), id, label: id });
++const button = (id: string) => ({ ...makeItem("button"), id, label: id, size: 60 });
+ 
+ describe("auto layout", () => {
+   it("lays out children horizontally with explicit gap and padding", () => {
+@@ -19,7 +19,7 @@ describe("auto layout", () => {
+       },
+     };
+     const placed = layoutOf(group, {});
+-    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [94, 28]]);
++    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [98, 28]]);
+   });
+ 
+   it("centers children on the cross axis inside an explicit container", () => {
+@@ -58,11 +58,11 @@ describe("auto layout", () => {
+     };
+     const placed = layoutOf(group, {});
+     expect(placed[0].x).toBe(0);
+-    expect(placed[1].x).toBe(144);
++    expect(placed[1].x).toBe(140);
+   });
+ 
+   it("preserves legacy layout when auto layout is omitted", () => {
+     const group: Group = { id: "g", x: 0, y: 0, axis: "x", items: [button("a"), button("b")] };
+-    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 59]);
++    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 63]);
+   });
+ });
+diff --git a/lib/i18n.ts b/lib/i18n.ts
+index 9795562..f7119f5 100644
+--- a/lib/i18n.ts
++++ b/lib/i18n.ts
+@@ -483,6 +483,30 @@ export const UI = {
+     en: "Could not connect. Check the URL, the network and the server's CORS settings",
+     zh: "无法连接。请检查 URL、网络和服务器的 CORS 设置",
+   },
++  // collaboration
++  collaborate: { ja: "共同編集", en: "Collaborate", zh: "协作编辑" },
++  collabHint: { ja: "この画面をリアルタイムで一緒に編集", en: "Edit this design together", zh: "与他人实时共同编辑此设计" },
++  collabSubtitle: { ja: "この画面をリアルタイムで一緒に編集します。", en: "Edit this design together in realtime.", zh: "与他人实时共同编辑此设计。" },
++  collabNotConfigured: {
++    ja: "共同編集はまだ設定されていません。デプロイ環境に NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を追加してください。",
++    en: "Collaboration is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.",
++    zh: "尚未配置协作功能。请在部署环境中添加 NEXT_PUBLIC_SUPABASE_URL 和 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY。",
++  },
++  collabIntro: {
++    ja: "共同編集ルームを作成し、生成されたリンクを共有してください。ルームが有効な間、リンクを持つ人は誰でもこのプロジェクトを編集できます。",
++    en: "Create a collaboration room and share the generated link. Anyone with the link can edit the project while the room is active.",
++    zh: "创建一个协作房间并分享生成的链接。房间开启期间，拥有该链接的任何人都可以编辑此项目。",
++  },
++  collabCreate: { ja: "共同編集リンクを作成", en: "Create collaboration link", zh: "创建协作链接" },
++  collabCreateError: { ja: "共同編集ルームを作成できませんでした。", en: "Unable to create collaboration room.", zh: "无法创建协作房间。" },
++  collabOnline: { ja: "オンライン {n} 人", en: "{n} online", zh: "{n} 人在线" },
++  collabCopyLink: { ja: "リンクをコピー", en: "Copy link", zh: "复制链接" },
++  collabLeave: { ja: "退出", en: "Leave", zh: "退出" },
++  collabTip: {
++    ja: "ヒント: 現在の共同編集はドキュメントのスナップショットを同期する簡易版です。今後、同じルームをより細かく競合をマージできる CRDT に移行できます。",
++    en: "Tip: this first collaboration version syncs the document snapshot. Later we can move the same room to a CRDT for finer-grained conflict merging.",
++    zh: "提示：当前的协作功能只是同步文档快照的初版，之后可以把同一个房间迁移到 CRDT，以支持更精细的冲突合并。",
++  },
+ } as const satisfies Record<string, Str>;
+ 
+ export type UIKey = keyof typeof UI;
+@@ -563,6 +587,11 @@ export const KO: Record<UIKey, string> = {
+   aiSelectScreen: "먼저 화면을 선택하세요", aiNoKey: "AI 탭에 키를 입력하면 사용할 수 있습니다", aiError: "AI 요청에 실패했습니다",
+   aiErrorRefusal: "모델이 답변을 거부했습니다", aiErrorJson: "모델의 응답을 읽을 수 없습니다", aiErrorLong: "답변이 너무 길어 중간에 잘렸습니다. 화면 수를 줄여 다시 시도하세요", aiErrorModel: "모델 ID를 입력하세요",
+   aiErrorInsecure: "기본 URL은 https를 사용하거나 localhost를 가리켜야 합니다", aiErrorNetwork: "연결할 수 없습니다. URL, 네트워크 및 서버의 CORS 설정을 확인하세요",
++  collaborate: "공동 편집", collabHint: "이 디자인을 함께 실시간으로 편집", collabSubtitle: "이 디자인을 함께 실시간으로 편집합니다.",
++  collabNotConfigured: "공동 편집이 아직 설정되지 않았습니다. 배포 환경에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 추가하세요.",
++  collabIntro: "공동 편집 룸을 만들고 생성된 링크를 공유하세요. 룸이 활성화된 동안에는 링크를 가진 누구나 프로젝트를 편집할 수 있습니다.",
++  collabCreate: "공동 편집 링크 만들기", collabCreateError: "공동 편집 룸을 만들 수 없습니다.", collabOnline: "{n}명 온라인", collabCopyLink: "링크 복사", collabLeave: "나가기",
++  collabTip: "팁: 이번 공동 편집은 문서 스냅샷을 동기화하는 초기 버전입니다. 나중에 같은 룸을 CRDT로 옮겨 더 세밀하게 충돌을 병합할 수 있습니다.",
+ };
+ 
+ /** the locale each language writes its dates in */
+diff --git a/package-lock.json b/package-lock.json
+index dfe90ba..8bcf1c5 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -9,6 +9,7 @@
+       "version": "0.1.0",
+       "license": "MIT",
+       "dependencies": {
++        "@supabase/supabase-js": "2.117.2",
+         "html-to-image": "^1.11.13",
+         "motion": "^13.1.1",
+         "next": "16.3.4",
+@@ -23,6 +24,9 @@
+         "tailwindcss": "^4",
+         "typescript": "^7",
+         "vitest": "^5.0.0"
++      },
++      "engines": {
++        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+       }
+     },
+     "node_modules/@alloc/quick-lru": {
+@@ -860,9 +864,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -881,9 +882,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -902,9 +900,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -923,9 +918,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -944,9 +936,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -965,9 +954,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1040,6 +1026,98 @@
+       "license": "MIT",
+       "peer": true
+     },
++    "node_modules/@supabase/auth-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/auth-js/-/auth-js-2.117.2.tgz",
++      "integrity": "sha512-Z3WnGwrphYZubrLbxp5Iv0tLA9A5GhvKzJ/ZXglxqwd2QEH2R4dXRltjVJ8sIn4xEW2BSFIGT0yALVJIgZeDYw==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/functions-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/functions-js/-/functions-js-2.117.2.tgz",
++      "integrity": "sha512-6DT4ZIjmZxa9ANKaBIrjc86AyKrX8M376ynvNeOBBVad3eP7x3UHqWfDR2ynFkHGzCuOpr1A+kObmnahxuwuog==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/phoenix": {
++      "version": "0.4.5",
++      "resolved": "https://registry.npmjs.org/@supabase/phoenix/-/phoenix-0.4.5.tgz",
++      "integrity": "sha512-aAn9H9ovVyeApKy11OWOrrOGq8DV68yWeH4ud2lN9fzn4aO8Zb5GLL9m1pUg9nLqIcT+ZDfAcsZe0E/nqdv2lw==",
++      "license": "MIT"
++    },
++    "node_modules/@supabase/postgrest-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/postgrest-js/-/postgrest-js-2.117.2.tgz",
++      "integrity": "sha512-V1Qhn+M8xzJqCasOxHZ2KG19Fj39PxU7weEAmOK65/KTsWCRXboB4hcQwFvxRvM7ZikeP9IZWNvQkfjvSxzYFw==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/realtime-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/realtime-js/-/realtime-js-2.117.2.tgz",
++      "integrity": "sha512-lYXSAIg3eAKA58riUED6Vb+TCzF8jtx18uOoiCaVJ7ZMre6FWBpwB1MPeW+B6vykJT/hPdiuqwcSB7ILMS21ew==",
++      "license": "MIT",
++      "dependencies": {
++        "@supabase/phoenix": "0.4.5",
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/storage-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/storage-js/-/storage-js-2.117.2.tgz",
++      "integrity": "sha512-8gAJoVaxZa/War2kFRfJMxGk4M190Q7lJ70BofwGlRxU/u9pIodd6XyTvmXkxOKXWuIYtkDaYPZrIAUt1T/7FQ==",
++      "license": "MIT",
++      "dependencies": {
++        "iceberg-js": "^0.8.1",
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/supabase-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-2.117.2.tgz",
++      "integrity": "sha512-eSG2VKnHR+Clp1PmidZ1/weJ8PJwoybjva3L2GgKqFG4YDS1Iqmc61psKGZP5xw6OMT2O7ZorPR42PY6q1BOXg==",
++      "license": "MIT",
++      "dependencies": {
++        "@supabase/auth-js": "2.117.2",
++        "@supabase/functions-js": "2.117.2",
++        "@supabase/postgrest-js": "2.117.2",
++        "@supabase/realtime-js": "2.117.2",
++        "@supabase/storage-js": "2.117.2"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      },
++      "peerDependencies": {
++        "@opentelemetry/api": ">=1.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@opentelemetry/api": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/@swc/helpers": {
+       "version": "0.5.23",
+       "resolved": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.23.tgz",
+@@ -2015,6 +2093,15 @@
+       "integrity": "sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==",
+       "license": "MIT"
+     },
++    "node_modules/iceberg-js": {
++      "version": "0.8.1",
++      "resolved": "https://registry.npmjs.org/iceberg-js/-/iceberg-js-0.8.1.tgz",
++      "integrity": "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.0.0"
++      }
++    },
+     "node_modules/jiti": {
+       "version": "2.7.0",
+       "resolved": "https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz",
+@@ -3006,9 +3093,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3031,9 +3115,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3056,9 +3137,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3081,9 +3159,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [

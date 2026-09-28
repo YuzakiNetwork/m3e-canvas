@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { groupBounds, layoutOf, makeItem, type Group } from "./tokens";
 
-const button = (id: string) => ({ ...makeItem("button"), id, label: id });
+const button = (id: string) => ({ ...makeItem("button"), id, label: id, size: 60 });
 
 describe("auto layout", () => {
   it("lays out children horizontally with explicit gap and padding", () => {
@@ -19,7 +19,7 @@ describe("auto layout", () => {
       },
     };
     const placed = layoutOf(group, {});
-    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [94, 28]]);
+    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [98, 28]]);
   });
 
   it("centers children on the cross axis inside an explicit container", () => {
@@ -58,11 +58,11 @@ describe("auto layout", () => {
     };
     const placed = layoutOf(group, {});
     expect(placed[0].x).toBe(0);
-    expect(placed[1].x).toBe(144);
+    expect(placed[1].x).toBe(140);
   });
 
   it("preserves legacy layout when auto layout is omitted", () => {
     const group: Group = { id: "g", x: 0, y: 0, axis: "x", items: [button("a"), button("b")] };
-    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 59]);
+    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 63]);
   });
 });

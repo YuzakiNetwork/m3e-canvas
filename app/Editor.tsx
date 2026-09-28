@@ -2669,7 +2669,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     } catch (error) {
       console.error("M3E collaboration setup failed:", error);
       setCollabStatus("error");
-      setToast(error instanceof Error ? error.message : "Unable to create collaboration room.");
+      showToast(error instanceof Error ? error.message : t("collabCreateError", lang));
     }
   };
 

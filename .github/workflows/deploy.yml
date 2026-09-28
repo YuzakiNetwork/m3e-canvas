@@ -29,6 +29,11 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          # Optional: only set if you want realtime collaboration on the deployed
+          # site. Add both as repo secrets (Settings > Secrets and variables >
+          # Actions). See supabase/schema.sql for the matching database setup.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
       - run: touch out/.nojekyll
       - uses: actions/upload-pages-artifact@v5
         with:

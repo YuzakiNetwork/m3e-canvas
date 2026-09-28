@@ -483,6 +483,30 @@ export const UI = {
     en: "Could not connect. Check the URL, the network and the server's CORS settings",
     zh: "无法连接。请检查 URL、网络和服务器的 CORS 设置",
   },
+  // collaboration
+  collaborate: { ja: "共同編集", en: "Collaborate", zh: "协作编辑" },
+  collabHint: { ja: "この画面をリアルタイムで一緒に編集", en: "Edit this design together", zh: "与他人实时共同编辑此设计" },
+  collabSubtitle: { ja: "この画面をリアルタイムで一緒に編集します。", en: "Edit this design together in realtime.", zh: "与他人实时共同编辑此设计。" },
+  collabNotConfigured: {
+    ja: "共同編集はまだ設定されていません。デプロイ環境に NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を追加してください。",
+    en: "Collaboration is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.",
+    zh: "尚未配置协作功能。请在部署环境中添加 NEXT_PUBLIC_SUPABASE_URL 和 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY。",
+  },
+  collabIntro: {
+    ja: "共同編集ルームを作成し、生成されたリンクを共有してください。ルームが有効な間、リンクを持つ人は誰でもこのプロジェクトを編集できます。",
+    en: "Create a collaboration room and share the generated link. Anyone with the link can edit the project while the room is active.",
+    zh: "创建一个协作房间并分享生成的链接。房间开启期间，拥有该链接的任何人都可以编辑此项目。",
+  },
+  collabCreate: { ja: "共同編集リンクを作成", en: "Create collaboration link", zh: "创建协作链接" },
+  collabCreateError: { ja: "共同編集ルームを作成できませんでした。", en: "Unable to create collaboration room.", zh: "无法创建协作房间。" },
+  collabOnline: { ja: "オンライン {n} 人", en: "{n} online", zh: "{n} 人在线" },
+  collabCopyLink: { ja: "リンクをコピー", en: "Copy link", zh: "复制链接" },
+  collabLeave: { ja: "退出", en: "Leave", zh: "退出" },
+  collabTip: {
+    ja: "ヒント: 現在の共同編集はドキュメントのスナップショットを同期する簡易版です。今後、同じルームをより細かく競合をマージできる CRDT に移行できます。",
+    en: "Tip: this first collaboration version syncs the document snapshot. Later we can move the same room to a CRDT for finer-grained conflict merging.",
+    zh: "提示：当前的协作功能只是同步文档快照的初版，之后可以把同一个房间迁移到 CRDT，以支持更精细的冲突合并。",
+  },
 } as const satisfies Record<string, Str>;
 
 export type UIKey = keyof typeof UI;
@@ -563,6 +587,11 @@ export const KO: Record<UIKey, string> = {
   aiSelectScreen: "먼저 화면을 선택하세요", aiNoKey: "AI 탭에 키를 입력하면 사용할 수 있습니다", aiError: "AI 요청에 실패했습니다",
   aiErrorRefusal: "모델이 답변을 거부했습니다", aiErrorJson: "모델의 응답을 읽을 수 없습니다", aiErrorLong: "답변이 너무 길어 중간에 잘렸습니다. 화면 수를 줄여 다시 시도하세요", aiErrorModel: "모델 ID를 입력하세요",
   aiErrorInsecure: "기본 URL은 https를 사용하거나 localhost를 가리켜야 합니다", aiErrorNetwork: "연결할 수 없습니다. URL, 네트워크 및 서버의 CORS 설정을 확인하세요",
+  collaborate: "공동 편집", collabHint: "이 디자인을 함께 실시간으로 편집", collabSubtitle: "이 디자인을 함께 실시간으로 편집합니다.",
+  collabNotConfigured: "공동 편집이 아직 설정되지 않았습니다. 배포 환경에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 추가하세요.",
+  collabIntro: "공동 편집 룸을 만들고 생성된 링크를 공유하세요. 룸이 활성화된 동안에는 링크를 가진 누구나 프로젝트를 편집할 수 있습니다.",
+  collabCreate: "공동 편집 링크 만들기", collabCreateError: "공동 편집 룸을 만들 수 없습니다.", collabOnline: "{n}명 온라인", collabCopyLink: "링크 복사", collabLeave: "나가기",
+  collabTip: "팁: 이번 공동 편집은 문서 스냅샷을 동기화하는 초기 버전입니다. 나중에 같은 룸을 CRDT로 옮겨 더 세밀하게 충돌을 병합할 수 있습니다.",
 };
 
 /** the locale each language writes its dates in */

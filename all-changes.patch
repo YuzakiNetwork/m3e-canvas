@@ -1,0 +1,1408 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..fe4ad46
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,19 @@
++# Optional. Only needed for realtime collaboration and cloud save (toolbar > folder icon).
++# Without these two, the app runs exactly as before — the Collaborate dialog just
++# says collaboration isn't configured.
++#
++# 1. Create a project at https://supabase.com.
++# 2. Authentication > Sign In / Providers > enable "Anonymous sign-ins" (collaboration)
++#    and keep "Email" enabled (cloud save accounts).
++# 3. SQL Editor > run supabase/schema.sql from this repo.
++# 4. Realtime > Settings > turn OFF "Allow public access" (this app only uses
++#    private, RLS-checked channels).
++# 5. Project Settings > API > copy the Project URL and the publishable key below.
++#
++# For local dev, copy this file to .env.local and fill in the two values.
++# For the GitHub Pages deploy, add them as repository secrets with the same
++# names instead (Settings > Secrets and variables > Actions) — see
++# .github/workflows/deploy.yml.
++
++NEXT_PUBLIC_SUPABASE_URL=
++NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index 3d06ff4..b2f90e7 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -29,6 +29,11 @@ jobs:
+         run: npm run build
+         env:
+           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
++          # Optional: only set if you want realtime collaboration on the deployed
++          # site. Add both as repo secrets (Settings > Secrets and variables >
++          # Actions). See supabase/schema.sql for the matching database setup.
++          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
++          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+       - run: touch out/.nojekyll
+       - uses: actions/upload-pages-artifact@v5
+         with:
+diff --git a/.gitignore b/.gitignore
+index dbc6837..ea989fb 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -32,6 +32,7 @@ yarn-error.log*
+ 
+ # env files (can opt-in for committing if needed)
+ .env*
++!.env.example
+ 
+ # vercel
+ .vercel
+diff --git a/app/Editor.tsx b/app/Editor.tsx
+index 3122d25..5c771be 100644
+--- a/app/Editor.tsx
++++ b/app/Editor.tsx
+@@ -127,11 +127,12 @@ import { barSlotOf, bodyRect, carryFrame, pullInto, tidyFrame } from "@/lib/tidy
+ import { constrainModalRails, modalRailOf, updateRail } from "@/lib/rail";
+ import { isProject, readProject, saveProject } from "@/lib/project";
+ import { hasShareHash, readShareHash, shareLink } from "@/lib/share";
+-import { collaborationLink, createCollaborationRoom, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
++import { collaborationErrorMessage, collaborationLink, createCollaborationRoom, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
+ import { LoadingIndicator } from "@/components/Loading";
+ import { draftDesign } from "@/lib/ai";
+ import { ShareDialog } from "@/components/ShareMenu";
+ import { CollaborationDialog } from "@/components/CollaborationDialog";
++import { CloudDialog } from "@/components/CloudDialog";
+ import { ColorPanel } from "@/components/ColorPanel";
+ import { MotionPanel, ShapePanel, TypePanel } from "@/components/ThemePanel";
+ import { ThemeContext, ensureFontLoaded, ensureLangFontLoaded } from "@/lib/theme";
+@@ -485,6 +486,12 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+   const [collabLink, setCollabLink] = useState<string | null>(null);
+   const [collabUsers, setCollabUsers] = useState<Collaborator[]>([]);
+   const [collabStatus, setCollabStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
++  const [collabError, setCollabError] = useState<string | null>(null);
++  const [cloudOpen, setCloudOpen] = useState(false);
++  /** the cloud project the canvas was opened from or last saved to; saving again overwrites it */
++  const [cloudLinked, setCloudLinked] = useState<{ id: string; name: string } | null>(null);
++  /** a cloud project waiting on the "replace the canvas?" question */
++  const pendingCloudRef = useRef<{ id: string; name: string } | null>(null);
+   const collabSessionRef = useRef<CollaborationSession | null>(null);
+   const collabApplyingRef = useRef(false);
+   const collabBroadcastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+@@ -2624,6 +2631,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+     setCollabLink(window.location.href);
+     setCollabOpen(true);
+     setCollabStatus("connecting");
++    setCollabError(null);
+     void openCollaboration(room, () => docRef.current, {
+       onDocument: (next) => { if (!active) return; collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
+       onPresence: setCollabUsers,
+@@ -2632,7 +2640,13 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+       if (!active) { void session?.close(); return; }
+       collabSessionRef.current = session;
+       setCollabStatus(session ? "connected" : "error");
++      if (!session) setCollabError(t("collabNotConfigured", getLang()));
+       session?.requestSync();
++    }).catch((error) => {
++      if (!active) return;
++      console.error("M3E collaboration join failed:", error);
++      setCollabStatus("error");
++      setCollabError(collaborationErrorMessage(error));
+     });
+     return () => {
+       active = false;
+@@ -2647,6 +2661,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+   const createCollaboration = async () => {
+     if (!isCollaborationConfigured()) { setCollabOpen(true); setCollabStatus("error"); return; }
+     setCollabStatus("connecting");
++    setCollabError(null);
+     try {
+       const room = await createCollaborationRoom();
+       const base = `${window.location.origin}${BASE_PATH}/`;
+@@ -2669,7 +2684,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+     } catch (error) {
+       console.error("M3E collaboration setup failed:", error);
+       setCollabStatus("error");
+-      setToast(error instanceof Error ? error.message : "Unable to create collaboration room.");
++      setCollabError(error ? collaborationErrorMessage(error) : t("collabCreateError", lang));
+     }
+   };
+ 
+@@ -2678,7 +2693,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+     collabSessionRef.current = null;
+     if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current);
+     if (session) await session.close();
+-    setCollabRoom(null); setCollabLink(null); setCollabUsers([]); setCollabStatus("idle"); setCollabOpen(false);
++    setCollabRoom(null); setCollabLink(null); setCollabUsers([]); setCollabStatus("idle"); setCollabError(null); setCollabOpen(false);
+     clearShareHash();
+   };
+ 
+@@ -4572,6 +4587,8 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+             note={aiNote}
+             onSaveProject={() => saveProject(doc)}
+             onOpenProject={() => projectFileRef.current?.click()}
++            onCloud={() => setCloudOpen(true)}
++            onCollaborate={() => setCollabOpen(true)}
+             onShare={!isMobile ? () => setShareOpen(true) : undefined}
+             shareState={draftBusy ? "busy" : draftBefore ? "review" : "idle"}
+             onDraftKeep={keepDraft}
+@@ -4874,9 +4891,16 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+           title={t("replaceProjectTitle", lang)}
+           body={t("replaceProject", lang)}
+           p={p}
+-          onCancel={() => setPendingImport(null)}
++          onCancel={() => {
++            pendingCloudRef.current = null;
++            setPendingImport(null);
++          }}
+           onConfirm={() => {
+             if (pendingImport) importDoc(pendingImport);
++            /* only a design that came from the cloud is linked to it, so a later "save"
++               never overwrites a project the canvas was not opened from */
++            setCloudLinked(pendingCloudRef.current);
++            pendingCloudRef.current = null;
+             setPendingImport(null);
+           }}
+         />
+@@ -4908,12 +4932,28 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
+           users={collabUsers}
+           configured={isCollaborationConfigured()}
+           link={collabLink}
++          status={collabStatus === "idle" ? "idle" : collabStatus}
++          error={collabError}
+           onClose={() => setCollabOpen(false)}
+           onCreate={() => void createCollaboration()}
+           onCopy={() => { if (collabLink) void navigator.clipboard.writeText(collabLink); }}
+           onLeave={() => void leaveCollaboration()}
+         />
+ 
++        <CloudDialog
++          p={p}
++          open={cloudOpen}
++          doc={doc}
++          linked={cloudLinked}
++          onClose={() => setCloudOpen(false)}
++          onLinked={setCloudLinked}
++          onOpenDoc={(next, project) => {
++            pendingCloudRef.current = project;
++            setPendingImport(next);
++          }}
++          onNotice={(message) => showToast(message, 1800, "cloud_done")}
++        />
++
+         <ConfirmDialog
+           open={confirmClear}
+           title={t("clearAllTitle", lang)}
+diff --git a/components/CloudDialog.tsx b/components/CloudDialog.tsx
+new file mode 100644
+index 0000000..d11e963
+--- /dev/null
++++ b/components/CloudDialog.tsx
+@@ -0,0 +1,253 @@
++"use client";
++
++import { useCallback, useEffect, useState } from "react";
++import type { Palette, Doc } from "@/lib/tokens";
++import { dateHeadline, t, useLang } from "@/lib/i18n";
++import { describeSupabaseError, isSupabaseConfigured } from "@/lib/supabase";
++import {
++  currentCloudUser,
++  deleteCloudProject,
++  listCloudProjects,
++  loadCloudProject,
++  saveCloudProject,
++  signInCloud,
++  signOutCloud,
++  signUpCloud,
++  watchCloudUser,
++  type CloudProject,
++  type CloudUser,
++} from "@/lib/cloud";
++
++type Props = {
++  p: Palette;
++  open: boolean;
++  doc: Doc;
++  /** the cloud project the canvas was last opened from or saved to, if any */
++  linked: { id: string; name: string } | null;
++  onClose: () => void;
++  onLinked: (project: { id: string; name: string } | null) => void;
++  /** hands a design opened from the cloud to the editor, which asks before replacing the canvas */
++  onOpenDoc: (doc: Doc, project: { id: string; name: string }) => void;
++  onNotice: (message: string) => void;
++};
++
++export function CloudDialog({ p, open, doc, linked, onClose, onLinked, onOpenDoc, onNotice }: Props) {
++  const lang = useLang();
++  const configured = isSupabaseConfigured();
++  const [user, setUser] = useState<CloudUser | null | undefined>(undefined);
++  const [mode, setMode] = useState<"in" | "up">("in");
++  const [email, setEmail] = useState("");
++  const [password, setPassword] = useState("");
++  const [busy, setBusy] = useState(false);
++  const [error, setError] = useState<string | null>(null);
++  const [info, setInfo] = useState<string | null>(null);
++  const [projects, setProjects] = useState<CloudProject[] | null>(null);
++  const [deleting, setDeleting] = useState<string | null>(null);
++
++  const fail = (e: unknown) => setError(describeSupabaseError(e));
++
++  const refresh = useCallback(async () => {
++    try {
++      setProjects(await listCloudProjects());
++    } catch (e) {
++      setError(describeSupabaseError(e));
++      setProjects([]);
++    }
++  }, []);
++
++  /* who is signed in, kept current while the dialog is open */
++  useEffect(() => {
++    if (!open || !configured) return;
++    let active = true;
++    setError(null);
++    setInfo(null);
++    setDeleting(null);
++    currentCloudUser().then((u) => active && setUser(u), (e) => { if (active) { setUser(null); setError(describeSupabaseError(e)); } });
++    const stop = watchCloudUser((u) => active && setUser(u));
++    return () => {
++      active = false;
++      stop();
++    };
++  }, [open, configured]);
++
++  useEffect(() => {
++    if (!open || !user) {
++      setProjects(null);
++      return;
++    }
++    void refresh();
++  }, [open, user, refresh]);
++
++  useEffect(() => {
++    if (!open) return;
++    const onKey = (e: KeyboardEvent) => {
++      if (e.key === "Escape") {
++        e.stopPropagation();
++        onClose();
++      }
++    };
++    window.addEventListener("keydown", onKey, true);
++    return () => window.removeEventListener("keydown", onKey, true);
++  }, [open, onClose]);
++
++  if (!open) return null;
++
++  const run = async (job: () => Promise<void>) => {
++    setBusy(true);
++    setError(null);
++    setInfo(null);
++    try {
++      await job();
++    } catch (e) {
++      fail(e);
++    } finally {
++      setBusy(false);
++    }
++  };
++
++  const submit = () =>
++    run(async () => {
++      if (mode === "up") {
++        const { confirm } = await signUpCloud(email, password);
++        if (confirm) {
++          setInfo(t("cloudCheckEmail", lang));
++          setMode("in");
++        }
++      } else {
++        await signInCloud(email, password);
++      }
++      setPassword("");
++    });
++
++  const save = (asNew: boolean) =>
++    run(async () => {
++      const name = doc.title?.trim() || linked?.name || "Untitled";
++      const saved = await saveCloudProject(doc, name, asNew ? null : linked?.id);
++      onLinked({ id: saved.id, name: saved.name });
++      onNotice(t("cloudSaved", lang));
++      await refresh();
++    });
++
++  const openProject = (project: CloudProject) =>
++    run(async () => {
++      const { doc: next, name } = await loadCloudProject(project.id);
++      onOpenDoc(next, { id: project.id, name });
++      onClose();
++    });
++
++  const remove = (project: CloudProject) => {
++    if (deleting !== project.id) {
++      setDeleting(project.id);
++      return;
++    }
++    setDeleting(null);
++    void run(async () => {
++      await deleteCloudProject(project.id);
++      if (linked?.id === project.id) onLinked(null);
++      await refresh();
++    });
++  };
++
++  const input: React.CSSProperties = {
++    height: 48,
++    padding: "0 16px",
++    borderRadius: 14,
++    border: `1px solid ${p.outline}`,
++    background: p.surfaceContainerLow,
++    color: p.onSurface,
++    fontSize: 15,
++    outline: "none",
++    width: "100%",
++    boxSizing: "border-box",
++  };
++  const filled: React.CSSProperties = { height: 44, padding: "0 20px", border: 0, borderRadius: 22, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: busy ? "progress" : "pointer", opacity: busy ? 0.7 : 1 };
++  const tonal: React.CSSProperties = { ...filled, background: p.secondaryContainer, color: p.onSecondaryContainer };
++  const text: React.CSSProperties = { border: 0, background: "transparent", color: p.primary, fontWeight: 700, cursor: "pointer", padding: 4, fontSize: 13 };
++
++  return (
++    <div
++      role="dialog"
++      aria-modal="true"
++      aria-label={t("cloud", lang)}
++      onClick={onClose}
++      style={{ position: "fixed", inset: 0, zIndex: 650, display: "grid", placeItems: "center", padding: 24, background: "rgba(0,0,0,0.32)" }}
++    >
++      <section
++        onClick={(e) => e.stopPropagation()}
++        style={{ width: "min(100%, 520px)", maxHeight: "min(100%, 680px)", overflowY: "auto", padding: 24, borderRadius: 28, background: p.surfaceContainerHigh, color: p.onSurface, boxShadow: "0 12px 40px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", gap: 16 }}
++      >
++        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
++          <div style={{ width: 44, height: 44, borderRadius: 16, background: p.primaryContainer, color: p.onPrimaryContainer, display: "grid", placeItems: "center", fontSize: 22 }}>☁</div>
++          <div style={{ flex: 1 }}>
++            <div style={{ fontSize: 22, fontWeight: 700 }}>{t("cloud", lang)}</div>
++            <div style={{ fontSize: 13, color: p.onSurfaceVariant }}>{t("cloudHint", lang)}</div>
++          </div>
++          <button onClick={onClose} aria-label={t("close", lang)} style={{ border: 0, background: "transparent", color: p.onSurfaceVariant, fontSize: 22, cursor: "pointer" }}>×</button>
++        </div>
++
++        {!configured ? (
++          <div style={{ padding: 16, borderRadius: 18, background: p.errorContainer, color: p.onErrorContainer, fontSize: 13, lineHeight: 1.55 }}>{t("cloudNotConfigured", lang)}</div>
++        ) : user === undefined ? (
++          <div style={{ fontSize: 14, color: p.onSurfaceVariant }}>{t("cloudLoading", lang)}</div>
++        ) : !user ? (
++          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
++            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: p.onSurfaceVariant }}>{t("cloudSignInTitle", lang)}</p>
++            <input style={input} type="email" autoComplete="email" placeholder={t("cloudEmail", lang)} value={email} onChange={(e) => setEmail(e.target.value)} />
++            <input
++              style={input}
++              type="password"
++              autoComplete={mode === "up" ? "new-password" : "current-password"}
++              placeholder={t("cloudPassword", lang)}
++              value={password}
++              onChange={(e) => setPassword(e.target.value)}
++              onKeyDown={(e) => { if (e.key === "Enter" && email && password && !busy) void submit(); }}
++            />
++            <button style={filled} disabled={busy || !email || !password} onClick={() => void submit()}>
++              {mode === "up" ? t("cloudSignUp", lang) : t("cloudSignIn", lang)}
++            </button>
++            <button style={text} onClick={() => { setMode(mode === "in" ? "up" : "in"); setError(null); setInfo(null); }}>
++              {mode === "in" ? t("cloudToSignUp", lang) : t("cloudToSignIn", lang)}
++            </button>
++          </div>
++        ) : (
++          <>
++            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
++              <span style={{ flex: 1, fontSize: 13, color: p.onSurfaceVariant, wordBreak: "break-all" }}>{t("cloudSignedInAs", lang).replace("{email}", user.email)}</span>
++              <button style={text} onClick={() => void run(async () => { await signOutCloud(); onLinked(null); })}>{t("cloudSignOut", lang)}</button>
++            </div>
++
++            {linked && <div style={{ fontSize: 12, color: p.onSurfaceVariant }}>{t("cloudLinked", lang).replace("{name}", linked.name)}</div>}
++            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
++              <button style={{ ...filled, flex: 1 }} disabled={busy} onClick={() => void save(false)}>{t("cloudSave", lang)}</button>
++              {linked && <button style={tonal} disabled={busy} onClick={() => void save(true)}>{t("cloudSaveNew", lang)}</button>}
++            </div>
++
++            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
++              {projects === null ? (
++                <div style={{ fontSize: 14, color: p.onSurfaceVariant }}>{t("cloudLoading", lang)}</div>
++              ) : projects.length === 0 ? (
++                <div style={{ fontSize: 14, color: p.onSurfaceVariant }}>{t("cloudEmpty", lang)}</div>
++              ) : (
++                projects.map((project) => (
++                  <div key={project.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 16, background: linked?.id === project.id ? p.secondaryContainer : p.surfaceContainerLow, color: linked?.id === project.id ? p.onSecondaryContainer : p.onSurface }}>
++                    <div style={{ flex: 1, minWidth: 0 }}>
++                      <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.name}</div>
++                      <div style={{ fontSize: 12, opacity: 0.75 }}>{t("cloudUpdated", lang).replace("{date}", dateHeadline(lang, new Date(project.updatedAt)))}</div>
++                    </div>
++                    <button style={text} disabled={busy} onClick={() => void openProject(project)}>{t("cloudOpen", lang)}</button>
++                    <button style={{ ...text, color: deleting === project.id ? p.error : p.onSurfaceVariant }} disabled={busy} onClick={() => remove(project)}>
++                      {deleting === project.id ? t("cloudDeleteConfirm", lang) : t("cloudDelete", lang)}
++                    </button>
++                  </div>
++                ))
++              )}
++            </div>
++          </>
++        )}
++
++        {info && <div role="status" style={{ padding: 14, borderRadius: 16, background: p.primaryContainer, color: p.onPrimaryContainer, fontSize: 13, lineHeight: 1.5 }}>{info}</div>}
++        {error && <div role="alert" style={{ padding: 14, borderRadius: 16, background: p.errorContainer, color: p.onErrorContainer, fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" }}>{error}</div>}
++      </section>
++    </div>
++  );
++}
+diff --git a/components/CollaborationDialog.tsx b/components/CollaborationDialog.tsx
+index 76f074f..a20361f 100644
+--- a/components/CollaborationDialog.tsx
++++ b/components/CollaborationDialog.tsx
+@@ -3,6 +3,7 @@
+ import { useEffect, useState } from "react";
+ import type { Palette } from "@/lib/tokens";
+ import type { Collaborator } from "@/lib/collaboration";
++import { t, useLang } from "@/lib/i18n";
+ 
+ type Props = {
+   p: Palette;
+@@ -11,6 +12,9 @@ type Props = {
+   users: Collaborator[];
+   configured: boolean;
+   link: string | null;
++  status: "idle" | "connecting" | "connected" | "error";
++  /** why the last attempt failed, in words a person can act on */
++  error: string | null;
+   onClose: () => void;
+   onCreate: () => void;
+   onCopy: () => void;
+@@ -24,12 +28,15 @@ export function CollaborationDialog({
+   users,
+   configured,
+   link,
++  status,
++  error,
+   onClose,
+   onCreate,
+   onCopy,
+   onLeave,
+ }: Props) {
+   const [copied, setCopied] = useState(false);
++  const lang = useLang();
+ 
+   useEffect(() => {
+     if (!open) setCopied(false);
+@@ -47,7 +54,7 @@ export function CollaborationDialog({
+     <div
+       role="dialog"
+       aria-modal="true"
+-      aria-label="Collaborate"
++      aria-label={t("collaborate", lang)}
+       onClick={onClose}
+       style={{
+         position: "fixed",
+@@ -76,23 +83,23 @@ export function CollaborationDialog({
+         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+           <div style={{ width: 44, height: 44, borderRadius: 16, background: p.primaryContainer, color: p.onPrimaryContainer, display: "grid", placeItems: "center", fontSize: 22 }}>✦</div>
+           <div style={{ flex: 1 }}>
+-            <div style={{ fontSize: 22, fontWeight: 700 }}>Collaborate</div>
+-            <div style={{ fontSize: 13, color: p.onSurfaceVariant }}>Edit this design together in realtime.</div>
++            <div style={{ fontSize: 22, fontWeight: 700 }}>{t("collaborate", lang)}</div>
++            <div style={{ fontSize: 13, color: p.onSurfaceVariant }}>{t("collabSubtitle", lang)}</div>
+           </div>
+-          <button onClick={onClose} aria-label="Close" style={{ border: 0, background: "transparent", color: p.onSurfaceVariant, fontSize: 22, cursor: "pointer" }}>×</button>
++          <button onClick={onClose} aria-label={t("close", lang)} style={{ border: 0, background: "transparent", color: p.onSurfaceVariant, fontSize: 22, cursor: "pointer" }}>×</button>
+         </div>
+ 
+         {!configured ? (
+           <div style={{ padding: 16, borderRadius: 18, background: p.errorContainer, color: p.onErrorContainer, fontSize: 13, lineHeight: 1.55 }}>
+-            Collaboration is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.
++            {t("collabNotConfigured", lang)}
+           </div>
+         ) : !roomId ? (
+           <>
+             <p style={{ margin: 0, color: p.onSurfaceVariant, fontSize: 14, lineHeight: 1.55 }}>
+-              Create a collaboration room and share the generated link. Anyone with the link can edit the project while the room is active.
++              {t("collabIntro", lang)}
+             </p>
+-            <button onClick={onCreate} className="m3-press" style={{ height: 48, border: 0, borderRadius: 24, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: "pointer" }}>
+-              Create collaboration link
++            <button onClick={onCreate} disabled={status === "connecting"} className="m3-press" style={{ height: 48, border: 0, borderRadius: 24, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: status === "connecting" ? "progress" : "pointer", opacity: status === "connecting" ? 0.7 : 1 }}>
++              {status === "connecting" ? t("collabConnecting", lang) : t("collabCreate", lang)}
+             </button>
+           </>
+         ) : (
+@@ -103,24 +110,32 @@ export function CollaborationDialog({
+                   {user.name.slice(0, 1).toUpperCase()}
+                 </span>
+               ))}
+-              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>{users.length} online</span>
++              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>
++                {status === "connecting" ? t("collabConnecting", lang) : t("collabOnline", lang).replace("{n}", String(users.length))}
++              </span>
+             </div>
+             <div style={{ padding: 14, borderRadius: 16, background: p.surfaceContainerLow, fontSize: 12, lineHeight: 1.5, wordBreak: "break-all" }}>
+               {link}
+             </div>
+             <div style={{ display: "flex", gap: 8 }}>
+               <button onClick={() => { onCopy(); setCopied(true); }} className="m3-press" style={{ flex: 1, height: 44, border: 0, borderRadius: 22, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: "pointer" }}>
+-                {copied ? "Copied" : "Copy link"}
++                {copied ? t("copied", lang) : t("collabCopyLink", lang)}
+               </button>
+               <button onClick={onLeave} className="m3-press" style={{ height: 44, padding: "0 18px", border: 0, borderRadius: 22, background: p.secondaryContainer, color: p.onSecondaryContainer, fontWeight: 700, cursor: "pointer" }}>
+-                Leave
++                {t("collabLeave", lang)}
+               </button>
+             </div>
+           </>
+         )}
+ 
++        {error && (
++          <div role="alert" style={{ padding: 14, borderRadius: 16, background: p.errorContainer, color: p.onErrorContainer, fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" }}>
++            {error}
++          </div>
++        )}
++
+         <div style={{ fontSize: 12, color: p.onSurfaceVariant, lineHeight: 1.5 }}>
+-          Tip: this first collaboration version syncs the document snapshot. Later we can move the same room to a CRDT for finer-grained conflict merging.
++          {t("collabTip", lang)}
+         </div>
+       </section>
+     </div>
+diff --git a/components/ShareMenu.tsx b/components/ShareMenu.tsx
+index a3d60d0..a795fc6 100644
+--- a/components/ShareMenu.tsx
++++ b/components/ShareMenu.tsx
+@@ -189,7 +189,7 @@ export function ShareDialog({
+               <Beta p={p} />
+               <span style={{ flex: 1 }} />
+               {pill(copied === "link" ? "check" : "link", copied === "link" ? t("copied", lang) : t("shareLinkCopy", lang), copyLink, { title: t("shareLinkHint", lang) })}
+-              {pill("group", "Collaborate", onCollaborate, { primary: true, title: "Edit this design together" })}
++              {pill("group", t("collaborate", lang), onCollaborate, { primary: true, title: t("collabHint", lang) })}
+             </div>
+             <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: p.onSurfaceVariant }}>{t("askAiHint", lang)}</p>
+             <textarea
+diff --git a/components/Toolbar.tsx b/components/Toolbar.tsx
+index 0e2d14a..05d54c1 100644
+--- a/components/Toolbar.tsx
++++ b/components/Toolbar.tsx
+@@ -85,6 +85,8 @@ export function Toolbar({
+   onPlace,
+   note,
+   onSaveProject,
++  onCloud,
++  onCollaborate,
+   onOpenProject,
+   onShare,
+   shareState = "idle",
+@@ -124,6 +126,10 @@ export function Toolbar({
+   note?: { text: string; icon: string } | null;
+   onSaveProject?: () => void;
+   onOpenProject?: () => void;
++  /** opens the account and cloud projects dialog */
++  onCloud?: () => void;
++  /** opens the realtime collaboration dialog */
++  onCollaborate?: () => void;
+   /** opens the "ask an AI" dialog from the left end of the zoom row */
+   onShare?: () => void;
+   /** busy while a model drafts; review while the draft waits to be kept or undone */
+@@ -427,6 +433,30 @@ export function Toolbar({
+                       onOpenProject();
+                     }}
+                   />
++                  {onCloud && (
++                    <IconBtn
++                      icon="cloud"
++                      p={p}
++                      size={44}
++                      title={t("cloudHint", lang)}
++                      onClick={() => {
++                        close();
++                        onCloud();
++                      }}
++                    />
++                  )}
++                  {onCollaborate && (
++                    <IconBtn
++                      icon="group"
++                      p={p}
++                      size={44}
++                      title={t("collabHint", lang)}
++                      onClick={() => {
++                        close();
++                        onCollaborate();
++                      }}
++                    />
++                  )}
+                 </div>
+               )}
+             </Popover>
+diff --git a/lib/auto-layout.test.ts b/lib/auto-layout.test.ts
+index bffd227..b36081a 100644
+--- a/lib/auto-layout.test.ts
++++ b/lib/auto-layout.test.ts
+@@ -1,7 +1,7 @@
+ import { describe, expect, it } from "vitest";
+ import { groupBounds, layoutOf, makeItem, type Group } from "./tokens";
+ 
+-const button = (id: string) => ({ ...makeItem("button"), id, label: id });
++const button = (id: string) => ({ ...makeItem("button"), id, label: id, size: 60 });
+ 
+ describe("auto layout", () => {
+   it("lays out children horizontally with explicit gap and padding", () => {
+@@ -19,7 +19,7 @@ describe("auto layout", () => {
+       },
+     };
+     const placed = layoutOf(group, {});
+-    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [94, 28]]);
++    expect(placed.map(({ x, y }) => [x, y])).toEqual([[26, 28], [98, 28]]);
+   });
+ 
+   it("centers children on the cross axis inside an explicit container", () => {
+@@ -58,11 +58,11 @@ describe("auto layout", () => {
+     };
+     const placed = layoutOf(group, {});
+     expect(placed[0].x).toBe(0);
+-    expect(placed[1].x).toBe(144);
++    expect(placed[1].x).toBe(140);
+   });
+ 
+   it("preserves legacy layout when auto layout is omitted", () => {
+     const group: Group = { id: "g", x: 0, y: 0, axis: "x", items: [button("a"), button("b")] };
+-    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 59]);
++    expect(layoutOf(group, {}).map(({ x }) => x)).toEqual([0, 63]);
+   });
+ });
+diff --git a/lib/cloud.ts b/lib/cloud.ts
+new file mode 100644
+index 0000000..89aa130
+--- /dev/null
++++ b/lib/cloud.ts
+@@ -0,0 +1,95 @@
++import type { User } from "@supabase/supabase-js";
++import { deserializeProject, PROJECT_FORMAT, PROJECT_VERSION } from "./project";
++import { getSupabase } from "./supabase";
++import type { Doc } from "./tokens";
++
++/* Cloud save: an email/password account (Supabase Auth) and one row per project in
++ * public.cloud_projects, readable and writable only by its owner (see supabase/schema.sql).
++ * The row's `data` is the same versioned envelope a .m3e file holds, so it goes through
++ * the same validation on the way back in. Collaboration signs in anonymously through the
++ * same client; an anonymous session is not an account, so it counts as signed out here. */
++
++export type CloudUser = { id: string; email: string };
++export type CloudProject = { id: string; name: string; updatedAt: string };
++
++const client = () => {
++  const supabase = getSupabase();
++  if (!supabase) throw new Error("Supabase is not configured.");
++  return supabase;
++};
++
++const asCloudUser = (user: User | null | undefined): CloudUser | null =>
++  user && !user.is_anonymous && user.email ? { id: user.id, email: user.email } : null;
++
++export async function currentCloudUser(): Promise<CloudUser | null> {
++  const { data, error } = await client().auth.getSession();
++  if (error) throw error;
++  return asCloudUser(data.session?.user);
++}
++
++/** calls back whenever the account signs in or out; returns the unsubscribe */
++export function watchCloudUser(callback: (user: CloudUser | null) => void): () => void {
++  const supabase = getSupabase();
++  if (!supabase) return () => {};
++  const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(asCloudUser(session?.user)));
++  return () => data.subscription.unsubscribe();
++}
++
++/** `confirm` is true when Supabase wants the emailed link clicked before the first sign-in */
++export async function signUpCloud(email: string, password: string): Promise<{ confirm: boolean }> {
++  const { data, error } = await client().auth.signUp({
++    email: email.trim(),
++    password,
++    options: { emailRedirectTo: typeof window === "undefined" ? undefined : window.location.origin + window.location.pathname },
++  });
++  if (error) throw error;
++  return { confirm: !data.session };
++}
++
++export async function signInCloud(email: string, password: string): Promise<void> {
++  const { error } = await client().auth.signInWithPassword({ email: email.trim(), password });
++  if (error) throw error;
++}
++
++export async function signOutCloud(): Promise<void> {
++  const { error } = await client().auth.signOut();
++  if (error) throw error;
++}
++
++type Row = { id: string; name: string; updated_at: string };
++const toProject = (row: Row): CloudProject => ({ id: row.id, name: row.name, updatedAt: row.updated_at });
++
++export async function listCloudProjects(): Promise<CloudProject[]> {
++  const { data, error } = await client().from("cloud_projects").select("id,name,updated_at").order("updated_at", { ascending: false });
++  if (error) throw error;
++  return (data as Row[]).map(toProject);
++}
++
++const envelope = (doc: Doc) => ({ format: PROJECT_FORMAT, version: PROJECT_VERSION, document: doc });
++
++/** overwrites `id` when given, otherwise stores the design as a new project */
++export async function saveCloudProject(doc: Doc, name: string, id?: string | null): Promise<CloudProject> {
++  const supabase = client();
++  const title = name.trim() || "Untitled";
++  // JSON round trip drops `undefined` fields the same way a saved file would
++  const data = JSON.parse(JSON.stringify(envelope(doc)));
++  const query = id
++    ? supabase.from("cloud_projects").update({ name: title, data }).eq("id", id)
++    : supabase.from("cloud_projects").insert({ name: title, data });
++  const { data: row, error } = await query.select("id,name,updated_at").single();
++  if (error) throw error;
++  return toProject(row as Row);
++}
++
++export async function loadCloudProject(id: string): Promise<{ doc: Doc; name: string }> {
++  const { data, error } = await client().from("cloud_projects").select("name,data").eq("id", id).single();
++  if (error) throw error;
++  const doc = deserializeProject((data as { data: unknown }).data);
++  if (!doc) throw new Error("This cloud project is not a valid M3E Canvas design.");
++  return { doc, name: (data as { name: string }).name };
++}
++
++export async function deleteCloudProject(id: string): Promise<void> {
++  const { error } = await client().from("cloud_projects").delete().eq("id", id);
++  if (error) throw error;
++}
+diff --git a/lib/collaboration.ts b/lib/collaboration.ts
+index c478de0..c4adee8 100644
+--- a/lib/collaboration.ts
++++ b/lib/collaboration.ts
+@@ -1,4 +1,5 @@
+-import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
++import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
++import { describeSupabaseError, getSupabase, isSupabaseConfigured } from "./supabase";
+ import type { Doc } from "./tokens";
+ 
+ export type Collaborator = {
+@@ -13,14 +14,10 @@ const ROOM_PARAM = "room";
+ const EVENT_DOC = "doc";
+ const EVENT_SYNC = "sync-request";
+ 
+-const getEnv = () => {
+-  if (typeof window === "undefined") return null;
+-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+-  return url && key ? { url, key } : null;
+-};
++export const isCollaborationConfigured = isSupabaseConfigured;
+ 
+-export const isCollaborationConfigured = () => !!getEnv();
++/** what to show a person when joining or creating a room fails */
++export const collaborationErrorMessage = describeSupabaseError;
+ 
+ export const createRoomId = () => {
+   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+@@ -85,10 +82,9 @@ const joinRoom = async (supabase: SupabaseClient, roomId: string, userId: string
+ };
+ 
+ export async function createCollaborationRoom(): Promise<string> {
+-  const env = getEnv();
+-  if (!env) throw new Error("Supabase is not configured.");
++  const supabase = getSupabase();
++  if (!supabase) throw new Error("Supabase is not configured.");
+ 
+-  const supabase = createClient(env.url, env.key);
+   const session = await ensureAuthenticated(supabase);
+   const roomId = createRoomId();
+ 
+@@ -140,10 +136,9 @@ export async function openCollaboration(
+     onStatus?: (status: "connecting" | "connected" | "error") => void;
+   },
+ ): Promise<CollaborationSession | null> {
+-  const env = getEnv();
+-  if (!env) return null;
++  const supabase = getSupabase();
++  if (!supabase) return null;
+ 
+-  const supabase = createClient(env.url, env.key);
+   const identity = readIdentity();
+ 
+   try {
+diff --git a/lib/i18n.ts b/lib/i18n.ts
+index 9795562..a61c0df 100644
+--- a/lib/i18n.ts
++++ b/lib/i18n.ts
+@@ -483,6 +483,55 @@ export const UI = {
+     en: "Could not connect. Check the URL, the network and the server's CORS settings",
+     zh: "无法连接。请检查 URL、网络和服务器的 CORS 设置",
+   },
++  // collaboration
++  collaborate: { ja: "共同編集", en: "Collaborate", zh: "协作编辑" },
++  collabHint: { ja: "この画面をリアルタイムで一緒に編集", en: "Edit this design together", zh: "与他人实时共同编辑此设计" },
++  collabSubtitle: { ja: "この画面をリアルタイムで一緒に編集します。", en: "Edit this design together in realtime.", zh: "与他人实时共同编辑此设计。" },
++  collabNotConfigured: {
++    ja: "共同編集はまだ設定されていません。デプロイ環境に NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を追加してください。",
++    en: "Collaboration is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.",
++    zh: "尚未配置协作功能。请在部署环境中添加 NEXT_PUBLIC_SUPABASE_URL 和 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY。",
++  },
++  collabIntro: {
++    ja: "共同編集ルームを作成し、生成されたリンクを共有してください。ルームが有効な間、リンクを持つ人は誰でもこのプロジェクトを編集できます。",
++    en: "Create a collaboration room and share the generated link. Anyone with the link can edit the project while the room is active.",
++    zh: "创建一个协作房间并分享生成的链接。房间开启期间，拥有该链接的任何人都可以编辑此项目。",
++  },
++  collabCreate: { ja: "共同編集リンクを作成", en: "Create collaboration link", zh: "创建协作链接" },
++  collabCreateError: { ja: "共同編集ルームを作成できませんでした。", en: "Unable to create collaboration room.", zh: "无法创建协作房间。" },
++  collabOnline: { ja: "オンライン {n} 人", en: "{n} online", zh: "{n} 人在线" },
++  collabCopyLink: { ja: "リンクをコピー", en: "Copy link", zh: "复制链接" },
++  collabLeave: { ja: "退出", en: "Leave", zh: "退出" },
++  collabTip: {
++    ja: "ヒント: 現在の共同編集はドキュメントのスナップショットを同期する簡易版です。今後、同じルームをより細かく競合をマージできる CRDT に移行できます。",
++    en: "Tip: this first collaboration version syncs the document snapshot. Later we can move the same room to a CRDT for finer-grained conflict merging.",
++    zh: "提示：当前的协作功能只是同步文档快照的初版，之后可以把同一个房间迁移到 CRDT，以支持更精细的冲突合并。",
++  },
++  collabConnecting: { ja: "接続中…", en: "Connecting…", zh: "连接中…" },
++  collabConnected: { ja: "接続済み", en: "Connected", zh: "已连接" },
++  cloud: { ja: "クラウド", en: "Cloud", zh: "云端" },
++  cloudHint: { ja: "アカウントにデザインを保存", en: "Save designs to your account", zh: "将设计保存到你的账号" },
++  cloudNotConfigured: { ja: "クラウド保存はまだ設定されていません。デプロイ環境に NEXT_PUBLIC_SUPABASE_URL と NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY を追加してください。", en: "Cloud save is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to the deployment environment.", zh: "尚未配置云端保存。请在部署环境中添加 NEXT_PUBLIC_SUPABASE_URL 和 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY。" },
++  cloudSignInTitle: { ja: "ログインして、デザインをクラウドに保存します。", en: "Sign in to keep your designs in the cloud.", zh: "登录后即可把设计保存到云端。" },
++  cloudEmail: { ja: "メールアドレス", en: "Email", zh: "邮箱" },
++  cloudPassword: { ja: "パスワード", en: "Password", zh: "密码" },
++  cloudSignIn: { ja: "ログイン", en: "Sign in", zh: "登录" },
++  cloudSignUp: { ja: "アカウントを作成", en: "Create account", zh: "创建账号" },
++  cloudToSignUp: { ja: "アカウントがない場合は作成", en: "No account yet? Create one", zh: "还没有账号？去创建" },
++  cloudToSignIn: { ja: "アカウントをお持ちの場合はログイン", en: "Already have an account? Sign in", zh: "已有账号？去登录" },
++  cloudSignOut: { ja: "ログアウト", en: "Sign out", zh: "退出登录" },
++  cloudSignedInAs: { ja: "{email} でログイン中", en: "Signed in as {email}", zh: "已登录：{email}" },
++  cloudSave: { ja: "クラウドに保存", en: "Save to cloud", zh: "保存到云端" },
++  cloudSaveNew: { ja: "新規として保存", en: "Save as new", zh: "另存为新项目" },
++  cloudSaved: { ja: "クラウドに保存しました", en: "Saved to cloud", zh: "已保存到云端" },
++  cloudLinked: { ja: "保存先: 「{name}」（上書き）", en: "Saving over “{name}”", zh: "将覆盖保存到“{name}”" },
++  cloudEmpty: { ja: "クラウドにプロジェクトはまだありません。", en: "No cloud projects yet.", zh: "云端还没有项目。" },
++  cloudOpen: { ja: "開く", en: "Open", zh: "打开" },
++  cloudDelete: { ja: "削除", en: "Delete", zh: "删除" },
++  cloudDeleteConfirm: { ja: "もう一度押すと削除", en: "Tap again to delete", zh: "再点一次即可删除" },
++  cloudCheckEmail: { ja: "確認メールを送りました。メール内のリンクを開いてから、ログインしてください。", en: "We sent a confirmation email. Open the link in it, then sign in.", zh: "已发送确认邮件。请先点击邮件中的链接，再登录。" },
++  cloudLoading: { ja: "読み込み中…", en: "Loading…", zh: "加载中…" },
++  cloudUpdated: { ja: "更新: {date}", en: "Updated {date}", zh: "更新于 {date}" },
+ } as const satisfies Record<string, Str>;
+ 
+ export type UIKey = keyof typeof UI;
+@@ -563,6 +612,36 @@ export const KO: Record<UIKey, string> = {
+   aiSelectScreen: "먼저 화면을 선택하세요", aiNoKey: "AI 탭에 키를 입력하면 사용할 수 있습니다", aiError: "AI 요청에 실패했습니다",
+   aiErrorRefusal: "모델이 답변을 거부했습니다", aiErrorJson: "모델의 응답을 읽을 수 없습니다", aiErrorLong: "답변이 너무 길어 중간에 잘렸습니다. 화면 수를 줄여 다시 시도하세요", aiErrorModel: "모델 ID를 입력하세요",
+   aiErrorInsecure: "기본 URL은 https를 사용하거나 localhost를 가리켜야 합니다", aiErrorNetwork: "연결할 수 없습니다. URL, 네트워크 및 서버의 CORS 설정을 확인하세요",
++  collaborate: "공동 편집", collabHint: "이 디자인을 함께 실시간으로 편집", collabSubtitle: "이 디자인을 함께 실시간으로 편집합니다.",
++  collabNotConfigured: "공동 편집이 아직 설정되지 않았습니다. 배포 환경에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 추가하세요.",
++  collabIntro: "공동 편집 룸을 만들고 생성된 링크를 공유하세요. 룸이 활성화된 동안에는 링크를 가진 누구나 프로젝트를 편집할 수 있습니다.",
++  collabCreate: "공동 편집 링크 만들기", collabCreateError: "공동 편집 룸을 만들 수 없습니다.", collabOnline: "{n}명 온라인", collabCopyLink: "링크 복사", collabLeave: "나가기",
++  collabTip: "팁: 이번 공동 편집은 문서 스냅샷을 동기화하는 초기 버전입니다. 나중에 같은 룸을 CRDT로 옮겨 더 세밀하게 충돌을 병합할 수 있습니다.",
++  collabConnecting: "연결 중…",
++  collabConnected: "연결됨",
++  cloud: "클라우드",
++  cloudHint: "계정에 디자인 저장",
++  cloudNotConfigured: "클라우드 저장이 아직 설정되지 않았습니다. 배포 환경에 NEXT_PUBLIC_SUPABASE_URL과 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY를 추가하세요.",
++  cloudSignInTitle: "로그인하면 디자인을 클라우드에 저장할 수 있습니다.",
++  cloudEmail: "이메일",
++  cloudPassword: "비밀번호",
++  cloudSignIn: "로그인",
++  cloudSignUp: "계정 만들기",
++  cloudToSignUp: "계정이 없나요? 만들기",
++  cloudToSignIn: "이미 계정이 있나요? 로그인",
++  cloudSignOut: "로그아웃",
++  cloudSignedInAs: "{email}(으)로 로그인됨",
++  cloudSave: "클라우드에 저장",
++  cloudSaveNew: "새 프로젝트로 저장",
++  cloudSaved: "클라우드에 저장했습니다",
++  cloudLinked: "“{name}”에 덮어쓰기",
++  cloudEmpty: "클라우드에 프로젝트가 아직 없습니다.",
++  cloudOpen: "열기",
++  cloudDelete: "삭제",
++  cloudDeleteConfirm: "한 번 더 누르면 삭제",
++  cloudCheckEmail: "확인 메일을 보냈습니다. 메일의 링크를 연 다음 로그인하세요.",
++  cloudLoading: "불러오는 중…",
++  cloudUpdated: "수정: {date}",
+ };
+ 
+ /** the locale each language writes its dates in */
+diff --git a/lib/supabase.test.ts b/lib/supabase.test.ts
+new file mode 100644
+index 0000000..5098371
+--- /dev/null
++++ b/lib/supabase.test.ts
+@@ -0,0 +1,31 @@
++import { describe, expect, it } from "vitest";
++import { describeSupabaseError, getSupabase, isSupabaseConfigured } from "./supabase";
++
++describe("describeSupabaseError", () => {
++  it("points a missing table at the schema file", () => {
++    const text = describeSupabaseError({ message: "Could not find the table 'public.collab_rooms' in the schema cache", code: "PGRST205" });
++    expect(text).toContain("PGRST205");
++    expect(text).toContain("supabase/schema.sql");
++  });
++
++  it("names the anonymous sign-in switch when it is off", () => {
++    expect(describeSupabaseError(new Error("Anonymous sign-ins are disabled"))).toContain("Anonymous sign-ins");
++  });
++
++  it("tells the old recursive policies apart from a plain permission error", () => {
++    expect(describeSupabaseError({ message: 'infinite recursion detected in policy for relation "collab_room_members"' })).toContain("re-run");
++    expect(describeSupabaseError({ message: "Unauthorized: You do not have permissions to read from this Channel topic" })).toContain("Allow public access");
++  });
++
++  it("copes with things that are not errors", () => {
++    expect(describeSupabaseError(undefined)).toBe("Unknown error");
++    expect(describeSupabaseError("boom")).toBe("boom");
++  });
++});
++
++describe("shared client", () => {
++  it("stays off without a browser or configuration", () => {
++    expect(isSupabaseConfigured()).toBe(false);
++    expect(getSupabase()).toBeNull();
++  });
++});
+diff --git a/lib/supabase.ts b/lib/supabase.ts
+new file mode 100644
+index 0000000..23f6203
+--- /dev/null
++++ b/lib/supabase.ts
+@@ -0,0 +1,40 @@
++import { createClient, type SupabaseClient } from "@supabase/supabase-js";
++
++/* One client for the whole page. Collaboration and cloud save both sign in through it,
++ * so they share a single auth session (a second client on the same storage key makes
++ * supabase-js warn about multiple GoTrue instances and can make sign-in calls wait on
++ * each other). NEXT_PUBLIC_* values are inlined by Next at build time, so they have to
++ * be read as literal `process.env.NAME` expressions. */
++
++let client: SupabaseClient | null = null;
++
++const readEnv = () => {
++  if (typeof window === "undefined") return null;
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
++  return url && key ? { url, key } : null;
++};
++
++export const isSupabaseConfigured = () => !!readEnv();
++
++export function getSupabase(): SupabaseClient | null {
++  if (client) return client;
++  const env = readEnv();
++  if (!env) return null;
++  client = createClient(env.url, env.key);
++  return client;
++}
++
++/** a message a person can act on, from whatever supabase-js or the realtime socket threw */
++export function describeSupabaseError(error: unknown): string {
++  const e = error as { message?: unknown; code?: unknown; hint?: unknown } | null;
++  const message = typeof e?.message === "string" && e.message ? e.message : typeof error === "string" ? error : "Unknown error";
++  const code = typeof e?.code === "string" && e.code ? ` [${e.code}]` : "";
++  const hint =
++    /anonymous/i.test(message) ? " — turn on Authentication › Sign In / Providers › Anonymous sign-ins."
++    : /schema cache|does not exist|PGRST205|42P01/i.test(`${message}${code}`) ? " — run supabase/schema.sql in the SQL editor."
++    : /infinite recursion/i.test(message) ? " — re-run the latest supabase/schema.sql (it replaces the old policies)."
++    : /unauthorized|permission|not allowed|row-level security/i.test(message) ? " — check the policies from supabase/schema.sql and that Realtime › Settings › Allow public access is off."
++    : "";
++  return `${message}${code}${hint}`;
++}
+diff --git a/package-lock.json b/package-lock.json
+index dfe90ba..8bcf1c5 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -9,6 +9,7 @@
+       "version": "0.1.0",
+       "license": "MIT",
+       "dependencies": {
++        "@supabase/supabase-js": "2.117.2",
+         "html-to-image": "^1.11.13",
+         "motion": "^13.1.1",
+         "next": "16.3.4",
+@@ -23,6 +24,9 @@
+         "tailwindcss": "^4",
+         "typescript": "^7",
+         "vitest": "^5.0.0"
++      },
++      "engines": {
++        "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
+       }
+     },
+     "node_modules/@alloc/quick-lru": {
+@@ -860,9 +864,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -881,9 +882,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -902,9 +900,6 @@
+         "ppc64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -923,9 +918,6 @@
+         "s390x"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -944,9 +936,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -965,9 +954,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MIT",
+       "optional": true,
+       "os": [
+@@ -1040,6 +1026,98 @@
+       "license": "MIT",
+       "peer": true
+     },
++    "node_modules/@supabase/auth-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/auth-js/-/auth-js-2.117.2.tgz",
++      "integrity": "sha512-Z3WnGwrphYZubrLbxp5Iv0tLA9A5GhvKzJ/ZXglxqwd2QEH2R4dXRltjVJ8sIn4xEW2BSFIGT0yALVJIgZeDYw==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/functions-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/functions-js/-/functions-js-2.117.2.tgz",
++      "integrity": "sha512-6DT4ZIjmZxa9ANKaBIrjc86AyKrX8M376ynvNeOBBVad3eP7x3UHqWfDR2ynFkHGzCuOpr1A+kObmnahxuwuog==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/phoenix": {
++      "version": "0.4.5",
++      "resolved": "https://registry.npmjs.org/@supabase/phoenix/-/phoenix-0.4.5.tgz",
++      "integrity": "sha512-aAn9H9ovVyeApKy11OWOrrOGq8DV68yWeH4ud2lN9fzn4aO8Zb5GLL9m1pUg9nLqIcT+ZDfAcsZe0E/nqdv2lw==",
++      "license": "MIT"
++    },
++    "node_modules/@supabase/postgrest-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/postgrest-js/-/postgrest-js-2.117.2.tgz",
++      "integrity": "sha512-V1Qhn+M8xzJqCasOxHZ2KG19Fj39PxU7weEAmOK65/KTsWCRXboB4hcQwFvxRvM7ZikeP9IZWNvQkfjvSxzYFw==",
++      "license": "MIT",
++      "dependencies": {
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/realtime-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/realtime-js/-/realtime-js-2.117.2.tgz",
++      "integrity": "sha512-lYXSAIg3eAKA58riUED6Vb+TCzF8jtx18uOoiCaVJ7ZMre6FWBpwB1MPeW+B6vykJT/hPdiuqwcSB7ILMS21ew==",
++      "license": "MIT",
++      "dependencies": {
++        "@supabase/phoenix": "0.4.5",
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/storage-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/storage-js/-/storage-js-2.117.2.tgz",
++      "integrity": "sha512-8gAJoVaxZa/War2kFRfJMxGk4M190Q7lJ70BofwGlRxU/u9pIodd6XyTvmXkxOKXWuIYtkDaYPZrIAUt1T/7FQ==",
++      "license": "MIT",
++      "dependencies": {
++        "iceberg-js": "^0.8.1",
++        "tslib": "2.8.1"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      }
++    },
++    "node_modules/@supabase/supabase-js": {
++      "version": "2.117.2",
++      "resolved": "https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-2.117.2.tgz",
++      "integrity": "sha512-eSG2VKnHR+Clp1PmidZ1/weJ8PJwoybjva3L2GgKqFG4YDS1Iqmc61psKGZP5xw6OMT2O7ZorPR42PY6q1BOXg==",
++      "license": "MIT",
++      "dependencies": {
++        "@supabase/auth-js": "2.117.2",
++        "@supabase/functions-js": "2.117.2",
++        "@supabase/postgrest-js": "2.117.2",
++        "@supabase/realtime-js": "2.117.2",
++        "@supabase/storage-js": "2.117.2"
++      },
++      "engines": {
++        "node": ">=22.0.0"
++      },
++      "peerDependencies": {
++        "@opentelemetry/api": ">=1.0.0"
++      },
++      "peerDependenciesMeta": {
++        "@opentelemetry/api": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/@swc/helpers": {
+       "version": "0.5.23",
+       "resolved": "https://registry.npmjs.org/@swc/helpers/-/helpers-0.5.23.tgz",
+@@ -2015,6 +2093,15 @@
+       "integrity": "sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==",
+       "license": "MIT"
+     },
++    "node_modules/iceberg-js": {
++      "version": "0.8.1",
++      "resolved": "https://registry.npmjs.org/iceberg-js/-/iceberg-js-0.8.1.tgz",
++      "integrity": "sha512-1dhVQZXhcHje7798IVM+xoo/1ZdVfzOMIc8/rgVSijRK38EDqOJoGula9N/8ZI5RD8QTxNQtK/Gozpr+qUqRRA==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=20.0.0"
++      }
++    },
+     "node_modules/jiti": {
+       "version": "2.7.0",
+       "resolved": "https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz",
+@@ -3006,9 +3093,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3031,9 +3115,6 @@
+         "arm64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3056,9 +3137,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "glibc"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+@@ -3081,9 +3159,6 @@
+         "x64"
+       ],
+       "dev": true,
+-      "libc": [
+-        "musl"
+-      ],
+       "license": "MPL-2.0",
+       "optional": true,
+       "os": [
+diff --git a/supabase/schema.sql b/supabase/schema.sql
+new file mode 100644
+index 0000000..657f8bf
+--- /dev/null
++++ b/supabase/schema.sql
+@@ -0,0 +1,163 @@
++-- Database for realtime collaboration (lib/collaboration.ts) and cloud save (lib/cloud.ts).
++-- Run the whole file in your Supabase project's SQL editor. It is safe to run again:
++-- every policy is dropped and recreated, so it also replaces the first version of this
++-- file, whose room policies looked themselves up and failed with
++-- "infinite recursion detected in policy for relation collab_room_members".
++--
++-- One-time dashboard settings this file cannot do for you:
++--   Authentication > Sign In / Providers > Anonymous sign-ins ........ ON  (collaboration)
++--   Authentication > Sign In / Providers > Email ..................... ON  (cloud save)
++--   Authentication > Sign In / Providers > Email > Confirm email ..... your call: off means
++--     a new account can sign in right away, on means it must click the emailed link first
++--   Authentication > URL Configuration > Site URL and Redirect URLs .. your deployed URL
++--   Realtime > Settings > Allow public access ........................ OFF
++
++---------------------------------------------------------------- collaboration
++
++create table if not exists public.collab_rooms (
++  id text primary key,
++  owner_id uuid not null references auth.users (id) on delete cascade,
++  created_at timestamptz not null default now()
++);
++
++create table if not exists public.collab_room_members (
++  room_id text not null references public.collab_rooms (id) on delete cascade,
++  user_id uuid not null references auth.users (id) on delete cascade,
++  role text not null default 'editor',
++  joined_at timestamptz not null default now(),
++  primary key (room_id, user_id)
++);
++
++alter table public.collab_rooms enable row level security;
++alter table public.collab_room_members enable row level security;
++
++grant select, insert, delete on public.collab_rooms to authenticated;
++grant select, insert on public.collab_room_members to authenticated;
++
++-- A policy on collab_room_members cannot select from collab_room_members (Postgres
++-- rejects that as infinite recursion), and the room and realtime policies both need
++-- "is this person in that room?". This function answers it with the table owner's
++-- rights, so the lookup itself skips row-level security.
++create or replace function public.is_room_member(rid text)
++returns boolean
++language sql
++stable
++security definer
++set search_path = ''
++as $$
++  select exists (
++    select 1
++    from public.collab_room_members m
++    where m.room_id = rid
++      and m.user_id = (select auth.uid())
++  );
++$$;
++
++revoke all on function public.is_room_member(text) from public;
++grant execute on function public.is_room_member(text) to authenticated;
++
++-- first-version policy names, dropped so an earlier run does not leave them behind
++drop policy if exists "create own room" on public.collab_rooms;
++drop policy if exists "owner can delete room" on public.collab_rooms;
++drop policy if exists "members can read their room" on public.collab_rooms;
++drop policy if exists "join a room" on public.collab_room_members;
++drop policy if exists "members can read roommates" on public.collab_room_members;
++drop policy if exists "room members can receive realtime messages" on realtime.messages;
++drop policy if exists "room members can send realtime messages" on realtime.messages;
++
++-- a signed-in (anonymous sessions included) person can create a room they own
++create policy "create own room" on public.collab_rooms
++  for insert to authenticated
++  with check (owner_id = (select auth.uid()));
++
++-- the creator can roll a room back when joining it as owner fails
++create policy "owner can delete room" on public.collab_rooms
++  for delete to authenticated
++  using (owner_id = (select auth.uid()));
++
++create policy "members can read their room" on public.collab_rooms
++  for select to authenticated
++  using (owner_id = (select auth.uid()) or public.is_room_member(id));
++
++-- the room id in the link is the invite, so anyone signed in can join a room that exists
++create policy "join a room" on public.collab_room_members
++  for insert to authenticated
++  with check (user_id = (select auth.uid()));
++
++create policy "members can read roommates" on public.collab_room_members
++  for select to authenticated
++  using (user_id = (select auth.uid()) or public.is_room_member(room_id));
++
++-- Realtime Authorization: a room's private channel is "m3e:room:<roomId>", so the room
++-- id is the third colon-separated part of the topic.
++create policy "room members can receive realtime messages" on realtime.messages
++  for select to authenticated
++  using (
++    realtime.messages.extension in ('broadcast', 'presence')
++    and public.is_room_member(split_part((select realtime.topic()), ':', 3))
++  );
++
++create policy "room members can send realtime messages" on realtime.messages
++  for insert to authenticated
++  with check (
++    realtime.messages.extension in ('broadcast', 'presence')
++    and public.is_room_member(split_part((select realtime.topic()), ':', 3))
++  );
++
++---------------------------------------------------------------- cloud save
++
++create table if not exists public.cloud_projects (
++  id uuid primary key default gen_random_uuid(),
++  owner_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
++  name text not null default 'Untitled',
++  data jsonb not null,
++  created_at timestamptz not null default now(),
++  updated_at timestamptz not null default now()
++);
++
++create index if not exists cloud_projects_owner_updated_idx
++  on public.cloud_projects (owner_id, updated_at desc);
++
++alter table public.cloud_projects enable row level security;
++
++grant select, insert, update, delete on public.cloud_projects to authenticated;
++
++create or replace function public.touch_cloud_project()
++returns trigger
++language plpgsql
++set search_path = ''
++as $$
++begin
++  new.updated_at = now();
++  return new;
++end;
++$$;
++
++drop trigger if exists cloud_projects_touch on public.cloud_projects;
++create trigger cloud_projects_touch
++  before update on public.cloud_projects
++  for each row execute function public.touch_cloud_project();
++
++drop policy if exists "own projects: read" on public.cloud_projects;
++drop policy if exists "own projects: create" on public.cloud_projects;
++drop policy if exists "own projects: update" on public.cloud_projects;
++drop policy if exists "own projects: delete" on public.cloud_projects;
++
++-- an anonymous collaboration session is also "authenticated"; it has no email and the
++-- app never saves with one, but the policies hold it to its own rows all the same
++create policy "own projects: read" on public.cloud_projects
++  for select to authenticated
++  using (owner_id = (select auth.uid()));
++
++create policy "own projects: create" on public.cloud_projects
++  for insert to authenticated
++  with check (owner_id = (select auth.uid()));
++
++create policy "own projects: update" on public.cloud_projects
++  for update to authenticated
++  using (owner_id = (select auth.uid()))
++  with check (owner_id = (select auth.uid()));
++
++create policy "own projects: delete" on public.cloud_projects
++  for delete to authenticated
++  using (owner_id = (select auth.uid()));

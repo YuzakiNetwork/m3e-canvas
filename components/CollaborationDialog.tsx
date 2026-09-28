@@ -12,6 +12,9 @@ type Props = {
   users: Collaborator[];
   configured: boolean;
   link: string | null;
+  status: "idle" | "connecting" | "connected" | "error";
+  /** why the last attempt failed, in words a person can act on */
+  error: string | null;
   onClose: () => void;
   onCreate: () => void;
   onCopy: () => void;
@@ -25,6 +28,8 @@ export function CollaborationDialog({
   users,
   configured,
   link,
+  status,
+  error,
   onClose,
   onCreate,
   onCopy,
@@ -93,8 +98,8 @@ export function CollaborationDialog({
             <p style={{ margin: 0, color: p.onSurfaceVariant, fontSize: 14, lineHeight: 1.55 }}>
               {t("collabIntro", lang)}
             </p>
-            <button onClick={onCreate} className="m3-press" style={{ height: 48, border: 0, borderRadius: 24, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: "pointer" }}>
-              {t("collabCreate", lang)}
+            <button onClick={onCreate} disabled={status === "connecting"} className="m3-press" style={{ height: 48, border: 0, borderRadius: 24, background: p.primary, color: p.onPrimary, fontWeight: 700, cursor: status === "connecting" ? "progress" : "pointer", opacity: status === "connecting" ? 0.7 : 1 }}>
+              {status === "connecting" ? t("collabConnecting", lang) : t("collabCreate", lang)}
             </button>
           </>
         ) : (
@@ -105,7 +110,9 @@ export function CollaborationDialog({
                   {user.name.slice(0, 1).toUpperCase()}
                 </span>
               ))}
-              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>{t("collabOnline", lang).replace("{n}", String(users.length))}</span>
+              <span style={{ fontSize: 13, color: p.onSurfaceVariant }}>
+                {status === "connecting" ? t("collabConnecting", lang) : t("collabOnline", lang).replace("{n}", String(users.length))}
+              </span>
             </div>
             <div style={{ padding: 14, borderRadius: 16, background: p.surfaceContainerLow, fontSize: 12, lineHeight: 1.5, wordBreak: "break-all" }}>
               {link}
@@ -119,6 +126,12 @@ export function CollaborationDialog({
               </button>
             </div>
           </>
+        )}
+
+        {error && (
+          <div role="alert" style={{ padding: 14, borderRadius: 16, background: p.errorContainer, color: p.onErrorContainer, fontSize: 12, lineHeight: 1.5, wordBreak: "break-word" }}>
+            {error}
+          </div>
         )}
 
         <div style={{ fontSize: 12, color: p.onSurfaceVariant, lineHeight: 1.5 }}>

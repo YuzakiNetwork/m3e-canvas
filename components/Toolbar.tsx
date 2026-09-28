@@ -85,6 +85,8 @@ export function Toolbar({
   onPlace,
   note,
   onSaveProject,
+  onCloud,
+  onCollaborate,
   onOpenProject,
   onShare,
   shareState = "idle",
@@ -124,6 +126,10 @@ export function Toolbar({
   note?: { text: string; icon: string } | null;
   onSaveProject?: () => void;
   onOpenProject?: () => void;
+  /** opens the account and cloud projects dialog */
+  onCloud?: () => void;
+  /** opens the realtime collaboration dialog */
+  onCollaborate?: () => void;
   /** opens the "ask an AI" dialog from the left end of the zoom row */
   onShare?: () => void;
   /** busy while a model drafts; review while the draft waits to be kept or undone */
@@ -427,6 +433,30 @@ export function Toolbar({
                       onOpenProject();
                     }}
                   />
+                  {onCloud && (
+                    <IconBtn
+                      icon="cloud"
+                      p={p}
+                      size={44}
+                      title={t("cloudHint", lang)}
+                      onClick={() => {
+                        close();
+                        onCloud();
+                      }}
+                    />
+                  )}
+                  {onCollaborate && (
+                    <IconBtn
+                      icon="group"
+                      p={p}
+                      size={44}
+                      title={t("collabHint", lang)}
+                      onClick={() => {
+                        close();
+                        onCollaborate();
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </Popover>

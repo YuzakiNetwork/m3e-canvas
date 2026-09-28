@@ -1,4 +1,5 @@
-import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import { describeSupabaseError, getSupabase, isSupabaseConfigured } from "./supabase";
 import type { Doc } from "./tokens";
 
 export type Collaborator = {
@@ -13,14 +14,10 @@ const ROOM_PARAM = "room";
 const EVENT_DOC = "doc";
 const EVENT_SYNC = "sync-request";
 
-const getEnv = () => {
-  if (typeof window === "undefined") return null;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  return url && key ? { url, key } : null;
-};
+export const isCollaborationConfigured = isSupabaseConfigured;
 
-export const isCollaborationConfigured = () => !!getEnv();
+/** what to show a person when joining or creating a room fails */
+export const collaborationErrorMessage = describeSupabaseError;
 
 export const createRoomId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -85,10 +82,9 @@ const joinRoom = async (supabase: SupabaseClient, roomId: string, userId: string
 };
 
 export async function createCollaborationRoom(): Promise<string> {
-  const env = getEnv();
-  if (!env) throw new Error("Supabase is not configured.");
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured.");
 
-  const supabase = createClient(env.url, env.key);
   const session = await ensureAuthenticated(supabase);
   const roomId = createRoomId();
 
@@ -140,10 +136,9 @@ export async function openCollaboration(
     onStatus?: (status: "connecting" | "connected" | "error") => void;
   },
 ): Promise<CollaborationSession | null> {
-  const env = getEnv();
-  if (!env) return null;
+  const supabase = getSupabase();
+  if (!supabase) return null;
 
-  const supabase = createClient(env.url, env.key);
   const identity = readIdentity();
 
   try {

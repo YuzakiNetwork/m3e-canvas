@@ -1,80 +1,53 @@
-# Fixes for YuzakiNetwork/m3e-canvas
+# m3e-canvas: Collaborate fix + cloud save (cumulative)
 
-Verified against your fork: `npx tsc --noEmit`, `npx vitest run` (767/767 tests),
-and `npx next build` all pass after these changes.
+This zip replaces the first one. It holds every change against your fork's HEAD
+(cf5cda3), including the earlier fixes (auto-layout tests, package-lock, i18n, deploy.yml).
+Copy the files over the same paths, or `git apply all-changes.patch`.
+Checked here: `tsc --noEmit`, `vitest run` (772 tests), `next build` all pass.
+NOT checked: anything against a real Supabase project. I have no access to yours.
 
-## How to apply
+## Why Collaborate still failed
 
-Either:
-- copy each file in this zip over the matching path in your repo, or
-- run `git apply fixes.patch` from your repo root (covers every file except
-  the two brand-new ones, `.env.example` and `supabase/schema.sql`, which you
-  just copy in — `git apply` doesn't create untracked new files from a diff
-  cleanly in every git version, so those two are included as plain files).
+1. **My own schema.sql was broken.** The "members can read roommates" policy selected from
+   the table it protects, so Postgres raises "infinite recursion detected in policy for
+   relation collab_room_members". Joining a room and the Realtime channel policy both hit
+   it. The new supabase/schema.sql uses a `security definer` function (`is_room_member`)
+   instead. **Re-run the whole file**; it drops and recreates the old policies, so running
+   it again is safe.
+2. **Two Supabase clients raced each other.** Creating a room and opening the channel each
+   made their own client on the same auth storage. Now there is one shared client
+   (lib/supabase.ts).
+3. **Errors were invisible.** Joining through a `#room=` link had no catch (stuck on
+   "connecting" forever) and create-room errors only flashed as a 2 s toast. The dialog now
+   shows the real error and a hint (missing table, anonymous sign-in off, policy problem).
+4. **The button was buried** inside the "Ask AI" dialog. It is now also in the toolbar's
+   folder menu (group icon).
 
-## What was broken
+If it still fails, open the Collaborate dialog and read the red box: it now says which
+setting is missing.
 
-1. **`lib/auto-layout.test.ts` — 3 failing tests.**
-   Not a bug in the new auto-layout code itself — the test's hand-written
-   expected numbers used the button's *height* (56) where they meant its
-   *width* (128), so `94`/`144`/`59` never matched what `layoutOf()` actually
-   returns. Fixed by giving the test buttons an explicit `size: 60` (so the
-   test isn't silently tied to `KIND_SPEC.button.w`) and correcting the math.
+## Setup checklist (all one-time)
 
-2. **`package-lock.json` was out of sync with `package.json`.**
-   `@supabase/supabase-js` was added to `dependencies` but the lockfile was
-   never regenerated. Since both `ci.yml` and `deploy.yml` run `npm ci`
-   (which refuses to run when the two files disagree), **every CI run and
-   every GitHub Pages deploy on this repo has been failing** since the
-   collaboration commits landed. Confirmed by reproducing the exact `npm ci`
-   error, then fixing it with `npm install` and committing the regenerated
-   lockfile.
+- Supabase > SQL editor: run `supabase/schema.sql`
+- Authentication > Sign In / Providers: Anonymous ON, Email ON
+- Authentication > URL Configuration: Site URL = your deployed URL
+- Realtime > Settings: Allow public access OFF
+- Local: copy `.env.example` to `.env.local` and fill the two values, restart `npm run dev`
+- GitHub Pages: add repo secrets NEXT_PUBLIC_SUPABASE_URL and
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (deploy.yml already passes them to the build)
 
-3. **The collaboration feature has no database behind it.**
-   `lib/collaboration.ts` reads and writes `collab_rooms` and
-   `collab_room_members`, but no migration for those tables (or their RLS
-   policies, or the Realtime Authorization policies a private channel needs)
-   was ever committed. Added `supabase/schema.sql` — run it once in your
-   Supabase project's SQL editor. It also needs "Anonymous sign-ins" turned
-   on (Authentication → Sign In / Providers) and "Allow public access" turned
-   **off** (Realtime → Settings), both one-time dashboard toggles that can't
-   be done via SQL.
+## Cloud save with accounts (new)
 
-4. **No `.env.example`, and `.gitignore` would have blocked it anyway.**
-   Nothing told a contributor which two env vars enable collaboration.
-   Added `.env.example` with the two vars and a short setup checklist, and
-   added `!.env.example` to `.gitignore` (the existing `.env*` rule was
-   silently excluding it).
+Toolbar > folder icon > cloud icon. Email + password sign up / sign in (Supabase Auth),
+"Save to cloud", a list of your projects with open / delete. Each project is one row in
+`cloud_projects`, readable and writable only by its owner (RLS). Opening a project asks
+before replacing the canvas; "Save to cloud" overwrites only the project the canvas was
+opened from or last saved to, and the dialog says which one. "Save as new" makes a copy.
 
-5. **The GitHub Pages deploy never had a way to enable collaboration.**
-   `deploy.yml` builds a static export but never passed the two
-   `NEXT_PUBLIC_SUPABASE_*` values into the build step, so even after adding
-   them as repo secrets, the deployed site would keep the feature dark. Wired
-   both through as `secrets.*` (optional — leave them unset and the site
-   behaves exactly as before, with the Collaborate dialog just saying it
-   isn't configured).
-
-6. **The collaboration UI bypassed the app's i18n system.**
-   Every other string in this app is fully localized (ja/en/zh/ko, enforced
-   by `lib/i18n.parity.test.ts`), but the "Collaborate" pill in `ShareMenu.tsx`
-   and all of `CollaborationDialog.tsx` were hardcoded English. Added the
-   matching keys to `UI`/`KO` in `lib/i18n.ts` and wired both components
-   through `t()`. Parity tests pass with the new keys.
-
-7. **A collaboration error toast bypassed the app's toast helper.**
-   `app/Editor.tsx`'s room-creation failure path called the raw `setToast`
-   setter instead of the `showToast` helper everywhere else in the file uses
-   (which adds the icon/auto-dismiss timer), and the fallback message was
-   hardcoded English instead of going through `t()`. Fixed to match the rest
-   of the file and added a `collabCreateError` i18n key.
-
-## Still worth doing (not included here, out of scope for a fix pass)
-
-- The Collaborate dialog and Editor's collaboration code haven't been
-  exercised against a real Supabase project by me — I verified the schema
-  against Supabase's documented Realtime Authorization pattern, but you
-  should smoke-test create-room / join-room / leave-room once you have a
-  project wired up.
-- No automated test covers `lib/collaboration.ts` itself (it's all
-  network-calling code, so it'd need mocking the Supabase client) — the
-  existing `767 passed` count doesn't include any coverage of this file.
+Notes:
+- With "Confirm email" on in Supabase, a new account must click the emailed link before it
+  can sign in; the dialog says so.
+- Collaboration signs in anonymously through the same client. An anonymous session is not
+  an account, so the cloud dialog treats it as signed out.
+- Not done: Google/GitHub login (needs OAuth setup on your side), sharing a cloud project
+  with other accounts, autosave.

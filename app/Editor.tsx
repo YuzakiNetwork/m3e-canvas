@@ -127,11 +127,12 @@ import { barSlotOf, bodyRect, carryFrame, pullInto, tidyFrame } from "@/lib/tidy
 import { constrainModalRails, modalRailOf, updateRail } from "@/lib/rail";
 import { isProject, readProject, saveProject } from "@/lib/project";
 import { hasShareHash, readShareHash, shareLink } from "@/lib/share";
-import { collaborationLink, createCollaborationRoom, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
+import { collaborationErrorMessage, collaborationLink, createCollaborationRoom, isCollaborationConfigured, openCollaboration, roomFromHash, type Collaborator, type CollaborationSession } from "@/lib/collaboration";
 import { LoadingIndicator } from "@/components/Loading";
 import { draftDesign } from "@/lib/ai";
 import { ShareDialog } from "@/components/ShareMenu";
 import { CollaborationDialog } from "@/components/CollaborationDialog";
+import { CloudDialog } from "@/components/CloudDialog";
 import { ColorPanel } from "@/components/ColorPanel";
 import { MotionPanel, ShapePanel, TypePanel } from "@/components/ThemePanel";
 import { ThemeContext, ensureFontLoaded, ensureLangFontLoaded } from "@/lib/theme";
@@ -485,6 +486,12 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   const [collabLink, setCollabLink] = useState<string | null>(null);
   const [collabUsers, setCollabUsers] = useState<Collaborator[]>([]);
   const [collabStatus, setCollabStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [collabError, setCollabError] = useState<string | null>(null);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  /** the cloud project the canvas was opened from or last saved to; saving again overwrites it */
+  const [cloudLinked, setCloudLinked] = useState<{ id: string; name: string } | null>(null);
+  /** a cloud project waiting on the "replace the canvas?" question */
+  const pendingCloudRef = useRef<{ id: string; name: string } | null>(null);
   const collabSessionRef = useRef<CollaborationSession | null>(null);
   const collabApplyingRef = useRef(false);
   const collabBroadcastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2624,6 +2631,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     setCollabLink(window.location.href);
     setCollabOpen(true);
     setCollabStatus("connecting");
+    setCollabError(null);
     void openCollaboration(room, () => docRef.current, {
       onDocument: (next) => { if (!active) return; collabApplyingRef.current = true; applyDoc(next, false); queueMicrotask(() => fitRef.current()); },
       onPresence: setCollabUsers,
@@ -2632,7 +2640,13 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
       if (!active) { void session?.close(); return; }
       collabSessionRef.current = session;
       setCollabStatus(session ? "connected" : "error");
+      if (!session) setCollabError(t("collabNotConfigured", getLang()));
       session?.requestSync();
+    }).catch((error) => {
+      if (!active) return;
+      console.error("M3E collaboration join failed:", error);
+      setCollabStatus("error");
+      setCollabError(collaborationErrorMessage(error));
     });
     return () => {
       active = false;
@@ -2647,6 +2661,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   const createCollaboration = async () => {
     if (!isCollaborationConfigured()) { setCollabOpen(true); setCollabStatus("error"); return; }
     setCollabStatus("connecting");
+    setCollabError(null);
     try {
       const room = await createCollaborationRoom();
       const base = `${window.location.origin}${BASE_PATH}/`;
@@ -2669,7 +2684,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     } catch (error) {
       console.error("M3E collaboration setup failed:", error);
       setCollabStatus("error");
-      showToast(error instanceof Error ? error.message : t("collabCreateError", lang));
+      setCollabError(error ? collaborationErrorMessage(error) : t("collabCreateError", lang));
     }
   };
 
@@ -2678,7 +2693,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     collabSessionRef.current = null;
     if (collabBroadcastTimer.current) clearTimeout(collabBroadcastTimer.current);
     if (session) await session.close();
-    setCollabRoom(null); setCollabLink(null); setCollabUsers([]); setCollabStatus("idle"); setCollabOpen(false);
+    setCollabRoom(null); setCollabLink(null); setCollabUsers([]); setCollabStatus("idle"); setCollabError(null); setCollabOpen(false);
     clearShareHash();
   };
 
@@ -4572,6 +4587,8 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             note={aiNote}
             onSaveProject={() => saveProject(doc)}
             onOpenProject={() => projectFileRef.current?.click()}
+            onCloud={() => setCloudOpen(true)}
+            onCollaborate={() => setCollabOpen(true)}
             onShare={!isMobile ? () => setShareOpen(true) : undefined}
             shareState={draftBusy ? "busy" : draftBefore ? "review" : "idle"}
             onDraftKeep={keepDraft}
@@ -4874,9 +4891,16 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
           title={t("replaceProjectTitle", lang)}
           body={t("replaceProject", lang)}
           p={p}
-          onCancel={() => setPendingImport(null)}
+          onCancel={() => {
+            pendingCloudRef.current = null;
+            setPendingImport(null);
+          }}
           onConfirm={() => {
             if (pendingImport) importDoc(pendingImport);
+            /* only a design that came from the cloud is linked to it, so a later "save"
+               never overwrites a project the canvas was not opened from */
+            setCloudLinked(pendingCloudRef.current);
+            pendingCloudRef.current = null;
             setPendingImport(null);
           }}
         />
@@ -4908,10 +4932,26 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
           users={collabUsers}
           configured={isCollaborationConfigured()}
           link={collabLink}
+          status={collabStatus === "idle" ? "idle" : collabStatus}
+          error={collabError}
           onClose={() => setCollabOpen(false)}
           onCreate={() => void createCollaboration()}
           onCopy={() => { if (collabLink) void navigator.clipboard.writeText(collabLink); }}
           onLeave={() => void leaveCollaboration()}
+        />
+
+        <CloudDialog
+          p={p}
+          open={cloudOpen}
+          doc={doc}
+          linked={cloudLinked}
+          onClose={() => setCloudOpen(false)}
+          onLinked={setCloudLinked}
+          onOpenDoc={(next, project) => {
+            pendingCloudRef.current = project;
+            setPendingImport(next);
+          }}
+          onNotice={(message) => showToast(message, 1800, "cloud_done")}
         />
 
         <ConfirmDialog

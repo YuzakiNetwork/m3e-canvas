@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { FAB_MENU_TABS, KIND_TEXT, Lang, NAV_TABS, SPLIT_MENU_TABS, TAB_LABELS, getLang, t, SELECT_OPTIONS } from "./i18n";
+import { FAB_MENU_TABS, KIND_TEXT, Lang, NAV_TABS, SPLIT_MENU_TABS, TAB_LABELS, SEGMENT_LABELS, getLang, t, SELECT_OPTIONS } from "./i18n";
 import { Contrast, isLightColor, schemeFromSeed } from "./color";
 
 /* ---------- geometry ---------- */
@@ -601,6 +601,7 @@ export type Kind =
   | "slider"
   | "text"
   | "image"
+  | "video"
   | "camera"
   | "map"
   | "divider"
@@ -611,6 +612,7 @@ export type Kind =
   | "fabMenu"
   | "toolbar"
   | "tabs"
+  | "segmentedButtons"
   | "radio"
   | "carousel"
   | "datePicker"
@@ -1328,6 +1330,25 @@ export const KIND_SPEC: Record<Kind, KindSpec> = {
     defIcon: "image",
     defSize: 200,
   },
+  /* a video player: a still (the poster) with a play button and a progress bar over it */
+  video: {
+    label: "Video",
+    noun: "動画",
+    category: "content",
+    paletteIcon: "videocam",
+    w: CONTENT_W,
+    h: Math.round((CONTENT_W * 9) / 16),
+    radius: 20,
+    hasVariant: false,
+    hasLabel: false,
+    hasSupporting: false,
+    hasIcon: false,
+    size: { min: 96, max: PHONE_W, step: 4, icon: "width", presets: [HALF_W, CONTENT_W, PHONE_W] },
+    size2: { min: 72, max: PHONE_H, step: 4, icon: "height", presets: [120, 185, 280] },
+    defLabel: "",
+    defIcon: null,
+    defSize: CONTENT_W,
+  },
   camera: {
     label: "Camera",
     noun: "カメラ",
@@ -1577,6 +1598,26 @@ export const KIND_SPEC: Record<Kind, KindSpec> = {
     defLabel: "選択肢",
     defIcon: null,
   },
+  /* a single-select row of connected segments: one outlined pill, a 1dp divider between each
+   * segment, the chosen one filled with secondaryContainer */
+  segmentedButtons: {
+    label: "Segmented Buttons",
+    noun: "セグメント付きボタン",
+    category: "inputs",
+    paletteIcon: "segment",
+    w: PHONE_W,
+    h: 40,
+    radius: 20,
+    hasVariant: false,
+    hasLabel: false,
+    hasSupporting: false,
+    hasIcon: false,
+    hasTabs: true,
+    size: { min: 160, max: PHONE_W, step: 4, icon: "width", presets: WIDTH_PRESETS },
+    defLabel: "",
+    defIcon: null,
+    defSize: PHONE_W,
+  },
 };
 
 export const KIND_ORDER: Kind[] = [
@@ -1592,6 +1633,7 @@ export const KIND_ORDER: Kind[] = [
   "navRail",
   "toolbar",
   "tabs",
+  "segmentedButtons",
   "searchBar",
   "card",
   "listItem",
@@ -1609,6 +1651,7 @@ export const KIND_ORDER: Kind[] = [
   "timePicker",
   "text",
   "image",
+  "video",
   "carousel",
   "camera",
   "map",
@@ -1810,7 +1853,7 @@ export type ChoiceKind = (typeof CHOICE_KINDS)[number];
 export const isChoice = (k: Kind): k is ChoiceKind => (CHOICE_KINDS as readonly string[]).includes(k);
 /** the three pictures a screen shows: a picture, the camera's viewfinder and a map, each a box
  *  with something different in it and the same panel around it */
-export const PICTURE_KINDS = ["image", "camera", "map"] as const;
+export const PICTURE_KINDS = ["image", "video", "camera", "map"] as const;
 export type PictureKind = (typeof PICTURE_KINDS)[number];
 export const isPicture = (k: Kind): k is PictureKind => (PICTURE_KINDS as readonly string[]).includes(k);
 /** the two fields that hold a value: a text field, and the dropdown that picks one from a list */
@@ -2182,7 +2225,7 @@ export function fitHeight(it: Item, screenH: number): Item {
 export function carryItemSize(it: Item, from: { w: number; h: number }, to: { w: number; h: number }): Item {
   const spec = KIND_SPEC[it.kind];
   const patch: Partial<Item> = {};
-  const keepsShape = it.kind === "card" || it.kind === "image" || it.kind === "camera" || it.kind === "map";
+  const keepsShape = it.kind === "card" || it.kind === "image" || it.kind === "video" || it.kind === "camera" || it.kind === "map";
   if (spec.size && (spec.size.icon === "width" || keepsShape)) {
     /* only a size that is a width; a text size or an icon button's square are left alone */
     const cur = it.size ?? spec.defSize ?? spec.w;
@@ -2198,8 +2241,8 @@ export function carryItemSize(it: Item, from: { w: number; h: number }, to: { w:
     else if (cur > contentWidth(to.w) && it.kind !== "box" && it.kind !== "bottomSheet") patch.size = contentWidth(to.w);
   }
   if ((it.kind === "box" || it.kind === "bottomSheet" || it.kind === "navRail") && (it.size2 ?? spec.h) === from.h) patch.size2 = to.h;
-  /* a camera or map the author gave a height keeps its aspect ratio when its width changes */
-  if ((it.kind === "camera" || it.kind === "map") && it.size2 !== undefined && patch.size !== undefined) {
+  /* a video, camera or map the author gave a height keeps its aspect ratio when its width changes */
+  if ((it.kind === "video" || it.kind === "camera" || it.kind === "map") && it.size2 !== undefined && patch.size !== undefined) {
     const cur = it.size ?? spec.defSize ?? spec.w;
     patch.size2 = Math.round((it.size2 * patch.size) / cur);
   }
@@ -2426,6 +2469,8 @@ export function defaultTabsFor(kind: Kind): NavTab[] {
   switch (kind) {
     case "tabs":
       return TAB_LABELS[getLang()].map((label) => ({ icon: "", label }));
+    case "segmentedButtons":
+      return SEGMENT_LABELS[getLang()].map((label) => ({ icon: "", label }));
     case "select":
       return SELECT_OPTIONS[getLang()].map((label) => ({ icon: "", label }));
     case "fabMenu":
@@ -2481,7 +2526,7 @@ export function makeItem(kind: Kind): Item {
     it.tabs = defaultTabs();
     it.railExpanded = false;
   }
-  if (kind === "tabs" || kind === "fabMenu" || kind === "select" || kind === "splitButton") it.tabs = defaultTabsFor(kind);
+  if (kind === "tabs" || kind === "fabMenu" || kind === "select" || kind === "splitButton" || kind === "segmentedButtons") it.tabs = defaultTabsFor(kind);
   if (kind === "toolbar") it.tabs = defaultTabsFor(kind).slice(0, 4);
   return it;
 }
@@ -2529,6 +2574,7 @@ export function sizeOf(it: Item, widths: Record<string, number>) {
     case "toolbar":
       return { w: toolbarWidth(it), h: s.h };
     case "tabs":
+    case "segmentedButtons":
       return { w: n, h: s.h };
     case "text":
       return { w: widths[it.id] ?? 120, h: Math.round(n * 1.3) };
@@ -2541,6 +2587,8 @@ export function sizeOf(it: Item, widths: Record<string, number>) {
     /* a picture is as tall as it was made; square until it is given a height of its own */
     case "image":
       return { w: n, h: it.size2 ?? n };
+    case "video":
+      return { w: n, h: it.size2 ?? Math.round((n * 9) / 16) };
     case "camera":
       return { w: n, h: it.size2 ?? Math.round((n * 4) / 3) };
     case "map":
@@ -2629,6 +2677,7 @@ export function baseRadii(it: Item): Radii {
     case "image":
       if (it.corners) return { ...it.corners };
     // falls through
+    case "video":
     case "camera":
     case "map":
       return uniformRadii(it.radiusTop ?? scaleR(s.radius));

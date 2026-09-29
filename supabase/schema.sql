@@ -56,12 +56,24 @@ $$;
 revoke all on function public.is_room_member(text) from public;
 grant execute on function public.is_room_member(text) to authenticated;
 
--- first-version policy names, dropped so an earlier run does not leave them behind
-drop policy if exists "create own room" on public.collab_rooms;
-drop policy if exists "owner can delete room" on public.collab_rooms;
-drop policy if exists "members can read their room" on public.collab_rooms;
-drop policy if exists "join a room" on public.collab_room_members;
-drop policy if exists "members can read roommates" on public.collab_room_members;
+-- Drop EVERY existing policy on these tables, whatever it is called. Dropping only the
+-- names this file used before is not enough: a policy added by hand or by an earlier
+-- setup under another name keeps the recursion alive and the error does not go away.
+do $$
+declare
+  pol record;
+begin
+  for pol in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename in ('collab_rooms', 'collab_room_members', 'cloud_projects')
+  loop
+    execute format('drop policy %I on %I.%I', pol.policyname, pol.schemaname, pol.tablename);
+  end loop;
+end
+$$;
+
 drop policy if exists "room members can receive realtime messages" on realtime.messages;
 drop policy if exists "room members can send realtime messages" on realtime.messages;
 

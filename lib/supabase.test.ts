@@ -17,6 +17,10 @@ describe("describeSupabaseError", () => {
     expect(describeSupabaseError({ message: "Unauthorized: You do not have permissions to read from this Channel topic" })).toContain("Allow public access");
   });
 
+  it("explains a missing realtime partition as a wait-and-retry", () => {
+    expect(describeSupabaseError({ message: "MissingPartition: Realtime was unable to find the expected messages partition" })).toContain("try again");
+  });
+
   it("copes with things that are not errors", () => {
     expect(describeSupabaseError(undefined)).toBe("Unknown error");
     expect(describeSupabaseError("boom")).toBe("boom");

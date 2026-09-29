@@ -351,6 +351,8 @@ function itemJa(it: Item): string {
       return `${it.bold ? "太字の" : ""}テキスト${q(it.label)}（${it.size ?? 28}sp）`;
     case "image":
       return `${imageDims(it)} の画像${imageSrc(it) ? `（${imageSrc(it)} の画像を表示）` : it.src ? "（指定の画像を表示）" : "プレースホルダー"}`;
+    case "video":
+      return `${viewSize(it, 9 / 16)} の動画プレーヤー（再生ボタンと進行バー付き${imageSrc(it) ? `、ポスター画像は ${imageSrc(it)}` : it.src ? "、指定の画像をポスターに使う" : ""}）`;
     case "camera":
       return `${viewSize(it, 4 / 3)} のカメラプレビュー`;
     case "map":
@@ -380,6 +382,10 @@ function itemJa(it: Item): string {
     case "tabs": {
       const labels = (it.tabs ?? []).map((t) => q(t.label || "ラベルなし"));
       return `${labels.join("、")}の ${labels.length} つのタブ（${selectedText(it, "ja")}${isScrollableTabs(it) ? "、横にスクロールするタブ" : ""}）`;
+    }
+    case "segmentedButtons": {
+      const labels = (it.tabs ?? []).map((t) => q(t.label || "ラベルなし"));
+      return `${labels.join("、")}の ${labels.length} つのセグメントからなるセグメント付きボタン（単一選択、${selectedText(it, "ja")}）`;
     }
     case "radio":
       return `${q(it.label)}のラジオボタン（初期状態は${it.checked ? "選択" : "未選択"}）`;
@@ -448,6 +454,8 @@ function itemEn(it: Item): string {
       return `${it.bold ? "bold " : ""}text ${q(it.label)} at ${it.size ?? 28}sp`;
     case "image":
       return `a ${imageDims(it)} image${imageSrc(it) ? ` (load it from ${imageSrc(it)})` : it.src ? " (use the provided image)" : " placeholder"}`;
+    case "video":
+      return `a ${viewSize(it, 9 / 16)} video player (play button and progress bar${imageSrc(it) ? `, poster image from ${imageSrc(it)}` : it.src ? ", the provided image as its poster" : ""})`;
     case "camera":
       return `a ${viewSize(it, 4 / 3)} camera preview`;
     case "map":
@@ -477,6 +485,10 @@ function itemEn(it: Item): string {
     case "tabs": {
       const labels = (it.tabs ?? []).map((t) => q(t.label || "unlabeled"));
       return `a ${isScrollableTabs(it) ? "horizontally scrolling " : ""}tab row with ${labels.length} tabs: ${labels.join(", ")}; ${selectedText(it, "en")}`;
+    }
+    case "segmentedButtons": {
+      const labels = (it.tabs ?? []).map((t) => q(t.label || "unlabeled"));
+      return `a segmented button group with ${labels.length} segments: ${labels.join(", ")} (single-select, ${selectedText(it, "en")})`;
     }
     case "radio":
       return `a radio button ${q(it.label)} (initially ${it.checked ? "selected" : "unselected"})`;
@@ -545,6 +557,8 @@ function itemZh(it: Item): string {
       return `${it.bold ? "粗体" : ""}文本${q(it.label)}（${it.size ?? 28}sp）`;
     case "image":
       return `${imageDims(it)} 的图片${imageSrc(it) ? `（显示 ${imageSrc(it)} 的图片）` : it.src ? "（显示指定的图片）" : "占位符"}`;
+    case "video":
+      return `${viewSize(it, 9 / 16)} 的视频播放器（带播放按钮和进度条${imageSrc(it) ? `，海报图来自 ${imageSrc(it)}` : it.src ? "，使用指定的图片作为海报" : ""}）`;
     case "camera":
       return `${viewSize(it, 4 / 3)} 的相机预览`;
     case "map":
@@ -574,6 +588,10 @@ function itemZh(it: Item): string {
     case "tabs": {
       const labels = (it.tabs ?? []).map((t) => q(t.label || "无标签"));
       return `${labels.join("、")}这 ${labels.length} 个标签页（${selectedText(it, "zh")}${isScrollableTabs(it) ? "，可横向滚动" : ""}）`;
+    }
+    case "segmentedButtons": {
+      const labels = (it.tabs ?? []).map((t) => q(t.label || "无标签"));
+      return `${labels.join("、")}这 ${labels.length} 个分段的分段按钮（单选，${selectedText(it, "zh")}）`;
     }
     case "radio":
       return `${q(it.label)}单选按钮（初始状态为${it.checked ? "选中" : "未选中"}）`;
@@ -623,6 +641,7 @@ function itemKo(it: Item): string {
     case "slider": return `슬라이더(초깃값 ${it.value ?? 40}%)`;
     case "text": return `${it.bold ? "굵은 " : ""}텍스트 ${q(it.label)}(${it.size ?? 28}sp)`;
     case "image": return `${imageDims(it)} 이미지${imageSrc(it) ? `(${imageSrc(it)}의 이미지 표시)` : it.src ? "(지정한 이미지 표시)" : " 자리표시자"}`;
+    case "video": return `${viewSize(it, 9 / 16)} 동영상 플레이어(재생 버튼과 진행 바 포함${imageSrc(it) ? `, 포스터 이미지는 ${imageSrc(it)}` : it.src ? ", 지정한 이미지를 포스터로 사용" : ""})`;
     case "camera": return `${viewSize(it, 4 / 3)} 카메라 미리보기`;
     case "map": return `${viewSize(it, 3 / 4)} 지도`;
     case "divider": return "구분선";
@@ -643,6 +662,10 @@ function itemKo(it: Item): string {
     case "tabs": {
       const labels = (it.tabs ?? []).map((t) => q(t.label || "레이블 없음"));
       return `${labels.join(", ")}의 탭 ${labels.length}개(${selectedText(it, "ko")}${isScrollableTabs(it) ? ", 가로로 스크롤되는 탭" : ""})`;
+    }
+    case "segmentedButtons": {
+      const labels = (it.tabs ?? []).map((t) => q(t.label || "레이블 없음"));
+      return `${labels.join(", ")}의 세그먼트 ${labels.length}개로 이루어진 세그먼트 버튼(단일 선택, ${selectedText(it, "ko")})`;
     }
     case "radio": return `${q(it.label)} 라디오 버튼(초기 상태 ${it.checked ? "선택됨" : "선택 안 됨"})`;
     default: return noun;
@@ -1182,6 +1205,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     slider: "スライダー: M3 Expressive の太いトラック（高さ 16dp）と縦長のハンドル（幅 4dp・高さ 44dp）。ハンドルの左は primary、右は secondaryContainer。ドラッグで値を変えられる。",
     text: "テキスト: 指定の sp サイズ。見出しは onSurface、説明文は onSurfaceVariant、行間はサイズの 1.3〜1.5 倍。タップしてもリップルなどの反応は付けない。",
     image: "画像: 角丸 20dp、指定がなければ surfaceContainerHighest のプレースホルダー。アスペクト比を保って中央でクロップ。",
+    video: "動画プレーヤー: 角丸 20dp、16:9。ポスター画像（無い間は inverseSurface の暗い面）の上に、中央の 56dp の丸い再生ボタン（半透明の黒に白い play_arrow）と、下端に 4dp の進行バーと経過時間を置く。バーの進んだ部分は inversePrimary。",
     camera: "カメラプレビュー: 角丸 20dp。端末のカメラ映像をこの領域に表示し、権限が無い間は inverseSurface の暗い面にカメラアイコンを置く。",
     map: "地図: 角丸 20dp。地図 SDK のビューをこの領域に置き、読み込み中は surfaceContainerHighest に地図アイコンを置く。",
     divider: "区切り線: 1dp の outlineVariant、左右に 16dp の余白。",
@@ -1198,6 +1222,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     toolbar:
       "フローティングツールバー: M3 Expressive の HorizontalFloatingToolbar。高さ 64dp、角は完全な丸、画面下端から 16dp 上に浮かせ、内容の上に重ねる。スタンダードは surfaceContainer、ビブラントは primaryContainer。中のアイコンボタンは 48dp。",
     tabs: "タブ: M3 のプライマリタブ。高さ 48dp、ラベルは titleSmall、選択中のタブは primary の文字とラベル幅の 3dp インジケータ（上の角丸）、下に outlineVariant の区切り線。タブをタップすると内容が切り替わる。",
+    segmentedButtons:
+      "セグメント付きボタン: M3 の Segmented button。高さ 40dp、外枠は outline の 1dp 線、両端は完全な丸（ピル型）。セグメント間は outline の 1dp 区切り線。選択中のセグメントは secondaryContainer の塗りつぶしと onSecondaryContainer の文字・アイコン（先頭に check アイコンを添えてもよい）、未選択は透明な背景に onSurfaceVariant の文字。単一選択で、タップすると選択が切り替わる。",
     radio: "ラジオボタン: 20dp の円。選択時は primary の枠と中央の点、未選択は onSurfaceVariant の枠。同じグループ内では 1 つだけ選べる。ラベルは右に bodyLarge。",
   },
   en: {
@@ -1236,6 +1262,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     slider: "Sliders: the M3 Expressive thick track (16dp) with a tall handle (4×44dp). Primary on the left of the handle, secondaryContainer on the right. Dragging changes the value.",
     text: "Text: the specified sp size; headings on onSurface, descriptions on onSurfaceVariant, line height 1.3–1.5× the size. No ripple or press feedback on tap.",
     image: "Images: 20dp corners; a surfaceContainerHighest placeholder when none is provided. Keep the aspect ratio and center-crop.",
+    video: "Video player: 20dp corners, 16:9. Over the poster image (a dark inverseSurface pane while there is none) put a centered 56dp round play button (white play_arrow on translucent black) and, along the bottom, a 4dp progress bar with the elapsed time. The played part of the bar is inversePrimary.",
     camera: "Camera preview: 20dp corners. Show the device camera feed in this area; while permission is missing, show a camera icon on a dark inverseSurface pane.",
     map: "Map: 20dp corners. Place the map SDK view in this area; while it loads, show a map icon on surfaceContainerHighest.",
     divider: "Dividers: 1dp outlineVariant with 16dp horizontal insets.",
@@ -1252,6 +1279,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     toolbar:
       "Floating toolbar: the M3 Expressive HorizontalFloatingToolbar. 64dp tall, fully rounded, floating 16dp above the bottom edge over the content. Standard uses surfaceContainer, vibrant uses primaryContainer. The icon buttons inside are 48dp.",
     tabs: "Tabs: M3 primary tabs. 48dp tall, labels in titleSmall; the selected tab has primary text and a 3dp label-width indicator with rounded top corners, with an outlineVariant divider underneath. Tapping a tab switches the content.",
+    segmentedButtons:
+      "Segmented buttons: an M3 segmented button group. 40dp tall, a 1dp outline border, fully rounded ends (pill). A 1dp outline divider sits between segments. The selected segment fills with secondaryContainer and onSecondaryContainer text/icon (optionally a leading check icon); unselected segments show onSurfaceVariant text on a transparent background. Single-select; tapping a segment changes the selection.",
     radio: "Radio buttons: 20dp circles. Selected shows a primary ring with a center dot, unselected an onSurfaceVariant ring. Only one in a group can be selected. Label on the right in bodyLarge.",
   },
   zh: {
@@ -1289,6 +1318,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     slider: "滑块：M3 Expressive 的粗轨道（高 16dp）和竖长手柄（宽 4dp、高 44dp）。手柄左侧为 primary，右侧为 secondaryContainer。可拖动改变数值。",
     text: "文本：指定的 sp 字号。标题用 onSurface，说明文字用 onSurfaceVariant，行高为字号的 1.3〜1.5 倍。点击时不加涟漪等反馈。",
     image: "图片：圆角 20dp，未指定时使用 surfaceContainerHighest 的占位符。保持宽高比并居中裁剪。",
+    video: "视频播放器：圆角 20dp，16:9。在海报图（没有时为 inverseSurface 的深色面）上，居中放置 56dp 的圆形播放按钮（半透明黑底、白色 play_arrow），底部放 4dp 的进度条和已播放时间。进度条已播放部分为 inversePrimary。",
     camera: "相机预览：圆角 20dp。在此区域显示设备相机画面；未获得权限时，在 inverseSurface 的深色面板上显示相机图标。",
     map: "地图：圆角 20dp。在此区域放置地图 SDK 视图；加载期间在 surfaceContainerHighest 上显示地图图标。",
     divider: "分割线：1dp 的 outlineVariant，左右留 16dp 边距。",
@@ -1304,6 +1334,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     toolbar:
       "悬浮工具栏：M3 Expressive 的 HorizontalFloatingToolbar。高 64dp，完全圆角，悬浮在距屏幕底部 16dp 处并覆盖在内容之上。标准样式用 surfaceContainer，鲜明样式用 primaryContainer。内部图标按钮 48dp。",
     tabs: "标签页：M3 的主标签页。高 48dp，标签用 titleSmall，选中项文字为 primary 并带与标签同宽的 3dp 指示条（上方圆角），下方为 outlineVariant 分割线。点击标签切换内容。",
+    segmentedButtons:
+      "分段按钮：M3 的 Segmented button。高 40dp，1dp outline 描边，两端为完全圆角（胶囊形）。分段之间为 1dp outline 分割线。选中的分段填充 secondaryContainer，文字/图标为 onSecondaryContainer（前面可加 check 图标）；未选中为透明背景、onSurfaceVariant 文字。单选，点击切换选中项。",
     radio: "单选按钮：20dp 圆形。选中时为 primary 的圆环加中心圆点，未选中为 onSurfaceVariant 圆环。同一组内只能选一个。标签在右侧，用 bodyLarge。",
   },
   ko: {
@@ -1334,6 +1366,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     slider: "슬라이더: M3 Expressive의 두꺼운 16dp 트랙과 4×44dp 세로 핸들. 핸들 왼쪽은 primary, 오른쪽은 secondaryContainer이며 드래그로 값을 바꾼다.",
     text: "텍스트: 지정된 sp 크기. 제목은 onSurface, 설명은 onSurfaceVariant, 줄 높이는 글자 크기의 1.3~1.5배. 탭 반응은 넣지 않는다.",
     image: "이미지: 모서리 20dp. 이미지가 없으면 surfaceContainerHighest 자리표시자를 사용하고 비율을 유지해 가운데에서 자른다.",
+    video: "동영상 플레이어: 모서리 20dp, 16:9. 포스터 이미지(없으면 inverseSurface의 어두운 면) 위 중앙에 56dp 원형 재생 버튼(반투명 검정 위 흰색 play_arrow)을 두고, 아래쪽에 4dp 진행 바와 경과 시간을 둔다. 바의 재생된 부분은 inversePrimary.",
     camera: "카메라 미리보기: 모서리 20dp. 이 영역에 기기 카메라 화면을 표시하고, 권한이 없는 동안은 inverseSurface의 어두운 면 위에 카메라 아이콘을 둔다.",
     map: "지도: 모서리 20dp. 이 영역에 지도 SDK 뷰를 두고, 불러오는 동안은 surfaceContainerHighest 위에 지도 아이콘을 둔다.",
     divider: "구분선: 1dp outlineVariant, 좌우 여백 16dp.",
@@ -1346,6 +1379,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
     fabMenu: "FAB 메뉴: M3 Expressive FloatingActionButtonMenu. 닫혔을 때는 일반 FAB이고 탭하면 항목이 위로 차례로 나타나며 아이콘은 close로 바뀐다. 각 항목은 높이 56dp, 완전 둥근 모서리, 아이콘과 레이블을 포함한다.",
     toolbar: "플로팅 도구 모음: M3 Expressive HorizontalFloatingToolbar. 높이 64dp, 완전 둥근 모서리로 화면 아래쪽에서 16dp 띄운다. 표준은 surfaceContainer, 비브런트는 primaryContainer, 내부 아이콘 버튼은 48dp.",
     tabs: "탭: M3 기본 탭. 높이 48dp, 레이블 titleSmall. 선택 탭은 primary 텍스트와 레이블 너비의 3dp 표시기를 사용하고 아래에 outlineVariant 구분선을 둔다.",
+    segmentedButtons:
+      "세그먼트 버튼: M3 Segmented button. 높이 40dp, 1dp outline 테두리, 양 끝은 완전히 둥근 모양(필 형태). 세그먼트 사이는 1dp outline 구분선. 선택된 세그먼트는 secondaryContainer 배경과 onSecondaryContainer 텍스트/아이콘(앞에 체크 아이콘 추가 가능)으로 채워지고, 선택되지 않은 세그먼트는 투명 배경에 onSurfaceVariant 텍스트를 사용한다. 단일 선택이며 탭하면 선택이 바뀐다.",
     radio: "라디오 버튼: 20dp 원형. 선택 시 primary 테두리와 가운데 점, 미선택 시 onSurfaceVariant 테두리. 그룹에서 하나만 선택되며 레이블은 오른쪽 bodyLarge.",
   },
 };

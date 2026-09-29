@@ -247,7 +247,7 @@ type Snapshot = { groups: Group[]; frames: Frame[]; meta?: DocMeta };
 const HANDLED = new Set<Kind>([
   "button", "iconButton", "chip", "splitButton", "fab", "extendedFab",
   "linearProgress", "circularProgress", "loadingIndicator", "slider", "carousel",
-  "card", "box", "bottomSheet", "image", "camera", "map", "listItem", "searchBar", "textField", "select", "switch", "divider",
+  "card", "box", "bottomSheet", "image", "video", "camera", "map", "listItem", "searchBar", "textField", "select", "switch", "divider",
   "topAppBar", "bottomNav", "tabs", "navRail",
 ]);
 /** parts held by the four points around them: a circle's diameter, a label's height */

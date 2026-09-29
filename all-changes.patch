@@ -52,7 +52,7 @@ index dbc6837..ea989fb 100644
  # vercel
  .vercel
 diff --git a/app/Editor.tsx b/app/Editor.tsx
-index 3122d25..5c771be 100644
+index 3122d25..bad8d01 100644
 --- a/app/Editor.tsx
 +++ b/app/Editor.tsx
 @@ -127,11 +127,12 @@ import { barSlotOf, bodyRect, carryFrame, pullInto, tidyFrame } from "@/lib/tidy
@@ -69,6 +69,15 @@ index 3122d25..5c771be 100644
  import { ColorPanel } from "@/components/ColorPanel";
  import { MotionPanel, ShapePanel, TypePanel } from "@/components/ThemePanel";
  import { ThemeContext, ensureFontLoaded, ensureLangFontLoaded } from "@/lib/theme";
+@@ -246,7 +247,7 @@ type Snapshot = { groups: Group[]; frames: Frame[]; meta?: DocMeta };
+ const HANDLED = new Set<Kind>([
+   "button", "iconButton", "chip", "splitButton", "fab", "extendedFab",
+   "linearProgress", "circularProgress", "loadingIndicator", "slider", "carousel",
+-  "card", "box", "bottomSheet", "image", "camera", "map", "listItem", "searchBar", "textField", "select", "switch", "divider",
++  "card", "box", "bottomSheet", "image", "video", "camera", "map", "listItem", "searchBar", "textField", "select", "switch", "divider",
+   "topAppBar", "bottomNav", "tabs", "navRail",
+ ]);
+ /** parts held by the four points around them: a circle's diameter, a label's height */
 @@ -485,6 +486,12 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
    const [collabLink, setCollabLink] = useState<string | null>(null);
    const [collabUsers, setCollabUsers] = useState<Collaborator[]>([]);
@@ -560,6 +569,181 @@ index 76f074f..a20361f 100644
          </div>
        </section>
      </div>
+diff --git a/components/M3Node.tsx b/components/M3Node.tsx
+index 9ff03d6..bf370d8 100644
+--- a/components/M3Node.tsx
++++ b/components/M3Node.tsx
+@@ -1329,6 +1329,33 @@ function Body({ item, p, tabScroll, menuShown }: { item: Item; p: Palette; tabSc
+         </div>
+       );
+ 
++    case "video": {
++      /* a player: the poster (or a dark ground), a play button in the middle and a progress
++         bar along the bottom. On its own layer, like the camera, so a quick resize never
++         shows the screen through it. */
++      const bar = Math.max(12, Math.min(20, Math.round((item.size ?? 200) * 0.06)));
++      return (
++        <div style={{ position: "relative", height: "100%", overflow: "hidden", color: "#fff", background: p.inverseSurface, transform: "translateZ(0)" }}>
++          {item.src && (
++            // eslint-disable-next-line @next/next/no-img-element
++            <img src={item.src} alt="" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
++          )}
++          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "45%", background: "linear-gradient(transparent, rgba(0,0,0,0.6))" }} />
++          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
++            <div style={{ width: 56, height: 56, borderRadius: 28, background: "rgba(0,0,0,0.5)", display: "grid", placeItems: "center" }}>
++              <Icon name="play_arrow" size={36} />
++            </div>
++          </div>
++          <div style={{ position: "absolute", left: bar, right: bar, bottom: bar, display: "flex", alignItems: "center", gap: 10 }}>
++            <div style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.4)", overflow: "hidden" }}>
++              <div style={{ width: "35%", height: "100%", background: p.inversePrimary }} />
++            </div>
++            <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>0:42 / 2:10</span>
++          </div>
++        </div>
++      );
++    }
++
+     case "camera":
+       /* a viewfinder: the live feed is dark, with focus brackets and a shutter row. The body
+          paints the dark ground itself, on a layer of its own, so a box resized in a hurry never
+@@ -1665,6 +1692,52 @@ function Body({ item, p, tabScroll, menuShown }: { item: Item; p: Palette; tabSc
+       );
+     }
+ 
++    case "segmentedButtons": {
++      const tabs = item.tabs ?? [];
++      const n = Math.max(1, tabs.length);
++      const selected = Math.min(item.selected ?? 0, Math.max(0, tabs.length - 1));
++      return (
++        <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
++          {tabs.map((tab, i) => {
++            const on = i === selected;
++            return (
++              <div
++                key={i}
++                style={{
++                  flex: 1,
++                  minWidth: 0,
++                  display: "flex",
++                  alignItems: "center",
++                  justifyContent: "center",
++                  gap: 6,
++                  padding: "0 12px",
++                  boxSizing: "border-box",
++                  background: on ? p.secondaryContainer : "transparent",
++                  color: on ? p.onSecondaryContainer : p.onSurfaceVariant,
++                  borderRight: i < n - 1 ? `1px solid ${p.outline}` : "none",
++                }}
++              >
++                {on && <Icon name="check" size={18} />}
++                {tab.icon && <Icon name={tab.icon} size={18} />}
++                {tab.label && (
++                  <span
++                    style={{
++                      fontSize: 14,
++                      fontWeight: w(500, 600),
++                      maxWidth: "100%",
++                      ...ellipsis,
++                    }}
++                  >
++                    {tab.label}
++                  </span>
++                )}
++              </div>
++            );
++          })}
++        </div>
++      );
++    }
++
+     case "loadingIndicator": {
+       const s = item.size ?? 48;
+       return (
+@@ -1724,6 +1797,8 @@ export function boxStyle(item: Item, p: Palette): React.CSSProperties {
+         : { background: p.surfaceContainer, border: "none", color: p.onSurfaceVariant };
+     case "tabs":
+       return { background: p.surface, border: "none", color: p.onSurface };
++    case "segmentedButtons":
++      return { background: "transparent", border: `1px solid ${p.outline}`, color: p.onSurfaceVariant };
+     case "searchBar":
+       return item.variant === "outlined"
+         ? { background: p.surface, border: `1px solid ${p.outline}`, color: p.onSurface }
+@@ -1742,6 +1817,7 @@ export function boxStyle(item: Item, p: Palette): React.CSSProperties {
+     case "image":
+     case "map":
+       return { background: p.surfaceContainerHighest, border: "none" };
++    case "video":
+     case "camera":
+       return { background: p.inverseSurface, border: "none", color: p.inverseOnSurface };
+     case "listItem": {
+diff --git a/components/PartInspector.tsx b/components/PartInspector.tsx
+index 66250cb..ebb7a8b 100644
+--- a/components/PartInspector.tsx
++++ b/components/PartInspector.tsx
+@@ -510,7 +510,7 @@ export function PartInspector({
+       )}
+ 
+       {/* ---------- entries ---------- */}
+-      {(kind === "bottomNav" || kind === "navRail" || kind === "tabs" || kind === "select") && (
++      {(kind === "bottomNav" || kind === "navRail" || kind === "tabs" || kind === "segmentedButtons" || kind === "select") && (
+         <Section id="part-entries" icon={kind === "select" ? "list" : "view_column"} title={t(kind === "select" ? "options" : "tabs", lang)} p={p}>
+           <EntryList item={item} onChange={onChange} p={p} icons={kind !== "tabs" && kind !== "select"} selectable clearable={kind === "select"} />
+         </Section>
+@@ -558,7 +558,7 @@ export function PartInspector({
+           </div>
+         </Section>
+       )}
+-      {kind === "image" && (
++      {(kind === "image" || kind === "video") && (
+         <Section id="part-image" icon="image" title={t("image", lang)} p={p}>
+           <ImageRow key={item.id} value={item.src} onChange={(src) => onChange({ src })} p={p} />
+         </Section>
+diff --git a/components/Preview.tsx b/components/Preview.tsx
+index f2c14cd..ceb4bac 100644
+--- a/components/Preview.tsx
++++ b/components/Preview.tsx
+@@ -173,7 +173,7 @@ function flippedLook(it: Item): Item {
+  *  controls whose whole purpose is being tapped -- a row in a list, a dropdown, a switch. An
+  *  indicator, a slider, a picture is not something that is pressed, so it stays as it is drawn.
+  *  A destination inside a bar has its own hit area, and lights up through that. */
+-const TAP_LIT: Kind[] = [...RIPPLE_KINDS, "listItem", "select", "checkbox", "radio", "switch"];
++const TAP_LIT: Kind[] = [...RIPPLE_KINDS, "listItem", "select", "checkbox", "radio", "switch", "segmentedButtons"];
+ /** about how long a browser's smooth scroll takes to come to rest */
+ const SMOOTH_SCROLL_MS = 420;
+ type Shape = { key: string; style: React.CSSProperties };
+@@ -501,7 +501,7 @@ function Tappable({
+     /* hit areas sit inside the scrolling layer, one per tab, so they move with the row */
+     const n = item.tabs?.length ?? 0;
+     for (let i = 0; i < n; i++) slots.push({ key: `tab:${i}`, style: { left: i * SCROLL_TAB_W, width: SCROLL_TAB_W, top: 0, bottom: 0, borderRadius: 16 } });
+-  } else if (onSlot && (item.kind === "bottomNav" || item.kind === "tabs")) {
++  } else if (onSlot && (item.kind === "bottomNav" || item.kind === "tabs" || item.kind === "segmentedButtons")) {
+     const n = item.tabs?.length ?? 0;
+     for (let i = 0; i < n; i++)
+       slots.push({ key: `tab:${i}`, style: { left: `${(i / n) * 100}%`, width: `${100 / n}%`, top: 0, bottom: item.kind === "bottomNav" ? NAV_BAR_H : 0, borderRadius: 16 } });
+@@ -941,6 +941,7 @@ function Screen({
+             if (splitOpens(shown) && flipped.has(it.id)) shown = { ...shown, [menuUp]: splitMenuRisesAt(it, g.y, frame) };
+             if (it.kind === "slider" && values[it.id] !== undefined) shown = { ...shown, value: values[it.id] };
+             if (it.kind === "select" && values[it.id] !== undefined) shown = { ...shown, selected: values[it.id] };
++            if (it.kind === "segmentedButtons" && values[it.id] !== undefined) shown = { ...shown, selected: values[it.id] };
+             const navKind = it.kind === "bottomNav" || it.kind === "navRail" || it.kind === "tabs";
+             /* bars with the same destinations are one bar to the visitor: the choice follows them across screens */
+             const navKey = navKind ? `nav:${it.kind}:${(it.tabs ?? []).map((t) => t.label).join("|")}` : "";
+@@ -965,8 +966,13 @@ function Screen({
+                 railAnimating={railMotion?.items.has(it.id)}
+                 onTap={tap}
+                 onSlot={
+-                  slotActions || navKind || it.kind === "splitButton"
++                  slotActions || navKind || it.kind === "splitButton" || it.kind === "segmentedButtons"
+                     ? (slot, animate) => {
++                        /* a segmented button is a local single choice, not a navigation target */
++                        if (it.kind === "segmentedButtons" && slot.startsWith("tab:")) {
++                          onValue(it.id, Number(slot.slice(4)));
++                          return;
++                        }
+                         /* the half with the words does what the button itself does, and a menu
+                            standing open gives way to it */
+                         if (it.kind === "splitButton" && slot === SPLIT_MAIN_SLOT) {
 diff --git a/components/ShareMenu.tsx b/components/ShareMenu.tsx
 index a3d60d0..a795fc6 100644
 --- a/components/ShareMenu.tsx
@@ -766,7 +950,7 @@ index 0000000..89aa130
 +  if (error) throw error;
 +}
 diff --git a/lib/collaboration.ts b/lib/collaboration.ts
-index c478de0..c4adee8 100644
+index c478de0..450be46 100644
 --- a/lib/collaboration.ts
 +++ b/lib/collaboration.ts
 @@ -1,4 +1,5 @@
@@ -776,9 +960,12 @@ index c478de0..c4adee8 100644
  import type { Doc } from "./tokens";
  
  export type Collaborator = {
-@@ -13,14 +14,10 @@ const ROOM_PARAM = "room";
+@@ -12,15 +13,13 @@ type PresencePayload = { name?: unknown; color?: unknown };
+ const ROOM_PARAM = "room";
  const EVENT_DOC = "doc";
  const EVENT_SYNC = "sync-request";
++/** waits between attempts to join a channel while Realtime is still creating today's partition */
++const JOIN_RETRY_DELAYS = [1500, 3000, 5000, 8000];
  
 -const getEnv = () => {
 -  if (typeof window === "undefined") return null;
@@ -794,7 +981,7 @@ index c478de0..c4adee8 100644
  
  export const createRoomId = () => {
    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-@@ -85,10 +82,9 @@ const joinRoom = async (supabase: SupabaseClient, roomId: string, userId: string
+@@ -85,10 +84,9 @@ const joinRoom = async (supabase: SupabaseClient, roomId: string, userId: string
  };
  
  export async function createCollaborationRoom(): Promise<string> {
@@ -807,7 +994,7 @@ index c478de0..c4adee8 100644
    const session = await ensureAuthenticated(supabase);
    const roomId = createRoomId();
  
-@@ -140,10 +136,9 @@ export async function openCollaboration(
+@@ -140,10 +138,9 @@ export async function openCollaboration(
      onStatus?: (status: "connecting" | "connected" | "error") => void;
    },
  ): Promise<CollaborationSession | null> {
@@ -820,10 +1007,172 @@ index c478de0..c4adee8 100644
    const identity = readIdentity();
  
    try {
+@@ -154,55 +151,83 @@ export async function openCollaboration(
+     throw error;
+   }
+ 
+-  const channel = supabase.channel(`m3e:room:${roomId}`, {
+-    config: {
+-      private: true,
+-      broadcast: { self: false },
+-      presence: { key: identity.key },
+-    },
+-  });
++  /* Realtime keeps realtime.messages partitioned by day and only creates a day's partition
++   * once a client has connected. A private channel checks its policies against that table
++   * as it joins, so the very first join of a day (or of a fresh project) can be refused with
++   * MissingPartition while the partition is still being made. A moment later it exists, so
++   * that one failure is worth retrying; anything else is reported straight away. */
++  const build = () => {
++    const next = supabase.channel(`m3e:room:${roomId}`, {
++      config: {
++        private: true,
++        broadcast: { self: false },
++        presence: { key: identity.key },
++      },
++    });
++    next
++      .on("broadcast", { event: EVENT_DOC }, (message) => {
++        const doc = message.payload?.doc;
++        if (!doc || typeof doc !== "object") return;
++        callbacks.onDocument(doc as Doc);
++      })
++      .on("broadcast", { event: EVENT_SYNC }, () => {
++        void next.send({
++          type: "broadcast",
++          event: EVENT_DOC,
++          payload: { doc: getDocument() },
++        });
++      })
++      .on("presence", { event: "sync" }, () => callbacks.onPresence(presenceUsers(next)))
++      .on("presence", { event: "join" }, () => callbacks.onPresence(presenceUsers(next)))
++      .on("presence", { event: "leave" }, () => callbacks.onPresence(presenceUsers(next)));
++    return next;
++  };
+ 
+-  const emitPresence = () => callbacks.onPresence(presenceUsers(channel));
+-
+-  channel
+-    .on("broadcast", { event: EVENT_DOC }, (message) => {
+-      const doc = message.payload?.doc;
+-      if (!doc || typeof doc !== "object") return;
+-      callbacks.onDocument(doc as Doc);
+-    })
+-    .on("broadcast", { event: EVENT_SYNC }, () => {
+-      void channel.send({
+-        type: "broadcast",
+-        event: EVENT_DOC,
+-        payload: { doc: getDocument() },
++  const join = () =>
++    new Promise<RealtimeChannel>((resolve, reject) => {
++      const next = build();
++      let settled = false;
++      next.subscribe(async (status, error) => {
++        if (status === "SUBSCRIBED") {
++          await next.track({
++            name: identity.name,
++            color: identity.color,
++            online_at: new Date().toISOString(),
++          });
++          settled = true;
++          resolve(next);
++        } else if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && !settled) {
++          /* only a join that never completed is torn down here; a live channel that hiccups
++             later is left to realtime-js's own reconnect */
++          settled = true;
++          void supabase.removeChannel(next);
++          reject(error ?? new Error(`Realtime channel failed: ${status}`));
++        }
+       });
+-    })
+-    .on("presence", { event: "sync" }, emitPresence)
+-    .on("presence", { event: "join" }, emitPresence)
+-    .on("presence", { event: "leave" }, emitPresence);
++    });
+ 
+   callbacks.onStatus?.("connecting");
+ 
+-  await new Promise<void>((resolve, reject) => {
+-    channel.subscribe(async (status, error) => {
+-      if (status === "SUBSCRIBED") {
+-        await channel.track({
+-          name: identity.name,
+-          color: identity.color,
+-          online_at: new Date().toISOString(),
+-        });
+-        callbacks.onStatus?.("connected");
+-        emitPresence();
+-        resolve();
+-      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
++  let channel: RealtimeChannel | null = null;
++  for (let attempt = 0; ; attempt++) {
++    try {
++      channel = await join();
++      break;
++    } catch (error) {
++      const text = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
++      if (attempt >= JOIN_RETRY_DELAYS.length || !/partition/i.test(text)) {
+         callbacks.onStatus?.("error");
+-        reject(error ?? new Error(`Realtime channel failed: ${status}`));
++        throw error;
+       }
+-    });
+-  });
++      await new Promise((resolve) => setTimeout(resolve, JOIN_RETRY_DELAYS[attempt]));
++    }
++  }
++  const live = channel;
++  callbacks.onStatus?.("connected");
++  callbacks.onPresence(presenceUsers(live));
+ 
+   const sendDocument = (doc: Doc) => {
+-    void channel.send({
++    void live.send({
+       type: "broadcast",
+       event: EVENT_DOC,
+       payload: { doc },
+@@ -210,7 +235,7 @@ export async function openCollaboration(
+   };
+ 
+   const requestSync = () => {
+-    void channel.send({
++    void live.send({
+       type: "broadcast",
+       event: EVENT_SYNC,
+       payload: { from: identity.key },
+@@ -220,7 +245,7 @@ export async function openCollaboration(
+   const updatePresence = (patch: Partial<Pick<Collaborator, "name" | "color">>) => {
+     if (patch.name !== undefined) identity.name = patch.name;
+     if (patch.color !== undefined) identity.color = patch.color;
+-    void channel.track({
++    void live.track({
+       name: identity.name,
+       color: identity.color,
+       online_at: new Date().toISOString(),
+@@ -233,8 +258,8 @@ export async function openCollaboration(
+     requestSync,
+     updatePresence,
+     close: async () => {
+-      await channel.untrack();
+-      await supabase.removeChannel(channel);
++      await live.untrack();
++      await supabase.removeChannel(live);
+     },
+   };
+ }
 diff --git a/lib/i18n.ts b/lib/i18n.ts
-index 9795562..a61c0df 100644
+index 9795562..59057df 100644
 --- a/lib/i18n.ts
 +++ b/lib/i18n.ts
+@@ -33,7 +33,7 @@ export const SEED_TEXT: Record<Lang, { favorite: string; share: string; inbox: s
+ export function translateDefaultText(value: string, kind: string, field: "label" | "supporting" | "tab", lang: Lang): string {
+   for (const { key: from } of LANGS) {
+     if (field === "tab") {
+-      const labels = (l: Lang) => kind === "tabs" ? TAB_LABELS[l] : kind === "select" ? SELECT_OPTIONS[l] : (kind === "fabMenu" ? FAB_MENU_TABS[l] : kind === "splitButton" ? SPLIT_MENU_TABS[l] : NAV_TABS[l]).map((tab) => tab.label);
++      const labels = (l: Lang) => kind === "tabs" ? TAB_LABELS[l] : kind === "segmentedButtons" ? SEGMENT_LABELS[l] : kind === "select" ? SELECT_OPTIONS[l] : (kind === "fabMenu" ? FAB_MENU_TABS[l] : kind === "splitButton" ? SPLIT_MENU_TABS[l] : NAV_TABS[l]).map((tab) => tab.label);
+       const index = labels(from).indexOf(value);
+       if (index >= 0) return labels(lang)[index] ?? value;
+     } else {
 @@ -483,6 +483,55 @@ export const UI = {
      en: "Could not connect. Check the URL, the network and the server's CORS settings",
      zh: "无法连接。请检查 URL、网络和服务器的 CORS 设置",
@@ -917,12 +1266,242 @@ index 9795562..a61c0df 100644
  };
  
  /** the locale each language writes its dates in */
+@@ -603,6 +682,7 @@ export const KIND_TEXT: Record<
+     slider: { noun: "スライダー" },
+     text: { noun: "テキスト", label: "見出し" },
+     image: { noun: "画像" },
++    video: { noun: "動画" },
+     camera: { noun: "カメラ" },
+     map: { noun: "地図" },
+     divider: { noun: "区切り線" },
+@@ -613,6 +693,7 @@ export const KIND_TEXT: Record<
+     fabMenu: { noun: "FAB メニュー" },
+     toolbar: { noun: "ツールバー" },
+     tabs: { noun: "タブ" },
++    segmentedButtons: { noun: "セグメント付きボタン" },
+     radio: { noun: "ラジオボタン", label: "選択肢" },
+     carousel: { noun: "カルーセル" },
+     datePicker: { noun: "日付ピッカー", label: "3月17日（月）" },
+@@ -641,6 +722,7 @@ export const KIND_TEXT: Record<
+     slider: { noun: "slider" },
+     text: { noun: "text", label: "Headline" },
+     image: { noun: "image" },
++    video: { noun: "video" },
+     camera: { noun: "camera" },
+     map: { noun: "map" },
+     divider: { noun: "divider" },
+@@ -651,6 +733,7 @@ export const KIND_TEXT: Record<
+     fabMenu: { noun: "FAB menu" },
+     toolbar: { noun: "toolbar" },
+     tabs: { noun: "tabs" },
++    segmentedButtons: { noun: "segmented buttons" },
+     radio: { noun: "radio button", label: "Option" },
+     carousel: { noun: "carousel" },
+     datePicker: { noun: "date picker", label: "Mon, Mar 17" },
+@@ -679,6 +762,7 @@ export const KIND_TEXT: Record<
+     slider: { noun: "滑块" },
+     text: { noun: "文本", label: "标题" },
+     image: { noun: "图片" },
++    video: { noun: "视频" },
+     camera: { noun: "相机" },
+     map: { noun: "地图" },
+     divider: { noun: "分割线" },
+@@ -689,6 +773,7 @@ export const KIND_TEXT: Record<
+     fabMenu: { noun: "FAB 菜单" },
+     toolbar: { noun: "工具栏" },
+     tabs: { noun: "标签页" },
++    segmentedButtons: { noun: "分段按钮" },
+     radio: { noun: "单选按钮", label: "选项" },
+     carousel: { noun: "轮播" },
+     datePicker: { noun: "日期选择器", label: "3月17日 周一" },
+@@ -717,6 +802,7 @@ export const KIND_TEXT: Record<
+     slider: { noun: "슬라이더" },
+     text: { noun: "텍스트", label: "제목" },
+     image: { noun: "이미지" },
++    video: { noun: "동영상" },
+     camera: { noun: "카메라" },
+     map: { noun: "지도" },
+     divider: { noun: "구분선" },
+@@ -727,6 +813,7 @@ export const KIND_TEXT: Record<
+     fabMenu: { noun: "FAB 메뉴" },
+     toolbar: { noun: "도구 모음" },
+     tabs: { noun: "탭" },
++    segmentedButtons: { noun: "세그먼트 버튼" },
+     radio: { noun: "라디오 버튼", label: "옵션" },
+     carousel: { noun: "캐러셀" },
+     datePicker: { noun: "날짜 선택기", label: "3월 17일 (월)" },
+@@ -742,6 +829,14 @@ export const TAB_LABELS: Record<Lang, string[]> = {
+   ko: ["추천", "팔로잉", "인기", "새 항목", "저장됨"],
+ };
+ 
++/** default labels of a segmented button group */
++export const SEGMENT_LABELS: Record<Lang, string[]> = {
++  ja: ["日", "週", "月"],
++  en: ["Day", "Week", "Month"],
++  zh: ["日", "周", "月"],
++  ko: ["일", "주", "월"],
++};
++
+ /** default entries of a FAB menu */
+ /** the options a new dropdown starts with */
+ export const SELECT_OPTIONS: Record<Lang, string[]> = {
+diff --git a/lib/prompt.ts b/lib/prompt.ts
+index 0e5026f..402cb59 100644
+--- a/lib/prompt.ts
++++ b/lib/prompt.ts
+@@ -351,6 +351,8 @@ function itemJa(it: Item): string {
+       return `${it.bold ? "太字の" : ""}テキスト${q(it.label)}（${it.size ?? 28}sp）`;
+     case "image":
+       return `${imageDims(it)} の画像${imageSrc(it) ? `（${imageSrc(it)} の画像を表示）` : it.src ? "（指定の画像を表示）" : "プレースホルダー"}`;
++    case "video":
++      return `${viewSize(it, 9 / 16)} の動画プレーヤー（再生ボタンと進行バー付き${imageSrc(it) ? `、ポスター画像は ${imageSrc(it)}` : it.src ? "、指定の画像をポスターに使う" : ""}）`;
+     case "camera":
+       return `${viewSize(it, 4 / 3)} のカメラプレビュー`;
+     case "map":
+@@ -381,6 +383,10 @@ function itemJa(it: Item): string {
+       const labels = (it.tabs ?? []).map((t) => q(t.label || "ラベルなし"));
+       return `${labels.join("、")}の ${labels.length} つのタブ（${selectedText(it, "ja")}${isScrollableTabs(it) ? "、横にスクロールするタブ" : ""}）`;
+     }
++    case "segmentedButtons": {
++      const labels = (it.tabs ?? []).map((t) => q(t.label || "ラベルなし"));
++      return `${labels.join("、")}の ${labels.length} つのセグメントからなるセグメント付きボタン（単一選択、${selectedText(it, "ja")}）`;
++    }
+     case "radio":
+       return `${q(it.label)}のラジオボタン（初期状態は${it.checked ? "選択" : "未選択"}）`;
+     default:
+@@ -448,6 +454,8 @@ function itemEn(it: Item): string {
+       return `${it.bold ? "bold " : ""}text ${q(it.label)} at ${it.size ?? 28}sp`;
+     case "image":
+       return `a ${imageDims(it)} image${imageSrc(it) ? ` (load it from ${imageSrc(it)})` : it.src ? " (use the provided image)" : " placeholder"}`;
++    case "video":
++      return `a ${viewSize(it, 9 / 16)} video player (play button and progress bar${imageSrc(it) ? `, poster image from ${imageSrc(it)}` : it.src ? ", the provided image as its poster" : ""})`;
+     case "camera":
+       return `a ${viewSize(it, 4 / 3)} camera preview`;
+     case "map":
+@@ -478,6 +486,10 @@ function itemEn(it: Item): string {
+       const labels = (it.tabs ?? []).map((t) => q(t.label || "unlabeled"));
+       return `a ${isScrollableTabs(it) ? "horizontally scrolling " : ""}tab row with ${labels.length} tabs: ${labels.join(", ")}; ${selectedText(it, "en")}`;
+     }
++    case "segmentedButtons": {
++      const labels = (it.tabs ?? []).map((t) => q(t.label || "unlabeled"));
++      return `a segmented button group with ${labels.length} segments: ${labels.join(", ")} (single-select, ${selectedText(it, "en")})`;
++    }
+     case "radio":
+       return `a radio button ${q(it.label)} (initially ${it.checked ? "selected" : "unselected"})`;
+     default:
+@@ -545,6 +557,8 @@ function itemZh(it: Item): string {
+       return `${it.bold ? "粗体" : ""}文本${q(it.label)}（${it.size ?? 28}sp）`;
+     case "image":
+       return `${imageDims(it)} 的图片${imageSrc(it) ? `（显示 ${imageSrc(it)} 的图片）` : it.src ? "（显示指定的图片）" : "占位符"}`;
++    case "video":
++      return `${viewSize(it, 9 / 16)} 的视频播放器（带播放按钮和进度条${imageSrc(it) ? `，海报图来自 ${imageSrc(it)}` : it.src ? "，使用指定的图片作为海报" : ""}）`;
+     case "camera":
+       return `${viewSize(it, 4 / 3)} 的相机预览`;
+     case "map":
+@@ -575,6 +589,10 @@ function itemZh(it: Item): string {
+       const labels = (it.tabs ?? []).map((t) => q(t.label || "无标签"));
+       return `${labels.join("、")}这 ${labels.length} 个标签页（${selectedText(it, "zh")}${isScrollableTabs(it) ? "，可横向滚动" : ""}）`;
+     }
++    case "segmentedButtons": {
++      const labels = (it.tabs ?? []).map((t) => q(t.label || "无标签"));
++      return `${labels.join("、")}这 ${labels.length} 个分段的分段按钮（单选，${selectedText(it, "zh")}）`;
++    }
+     case "radio":
+       return `${q(it.label)}单选按钮（初始状态为${it.checked ? "选中" : "未选中"}）`;
+     default:
+@@ -623,6 +641,7 @@ function itemKo(it: Item): string {
+     case "slider": return `슬라이더(초깃값 ${it.value ?? 40}%)`;
+     case "text": return `${it.bold ? "굵은 " : ""}텍스트 ${q(it.label)}(${it.size ?? 28}sp)`;
+     case "image": return `${imageDims(it)} 이미지${imageSrc(it) ? `(${imageSrc(it)}의 이미지 표시)` : it.src ? "(지정한 이미지 표시)" : " 자리표시자"}`;
++    case "video": return `${viewSize(it, 9 / 16)} 동영상 플레이어(재생 버튼과 진행 바 포함${imageSrc(it) ? `, 포스터 이미지는 ${imageSrc(it)}` : it.src ? ", 지정한 이미지를 포스터로 사용" : ""})`;
+     case "camera": return `${viewSize(it, 4 / 3)} 카메라 미리보기`;
+     case "map": return `${viewSize(it, 3 / 4)} 지도`;
+     case "divider": return "구분선";
+@@ -644,6 +663,10 @@ function itemKo(it: Item): string {
+       const labels = (it.tabs ?? []).map((t) => q(t.label || "레이블 없음"));
+       return `${labels.join(", ")}의 탭 ${labels.length}개(${selectedText(it, "ko")}${isScrollableTabs(it) ? ", 가로로 스크롤되는 탭" : ""})`;
+     }
++    case "segmentedButtons": {
++      const labels = (it.tabs ?? []).map((t) => q(t.label || "레이블 없음"));
++      return `${labels.join(", ")}의 세그먼트 ${labels.length}개로 이루어진 세그먼트 버튼(단일 선택, ${selectedText(it, "ko")})`;
++    }
+     case "radio": return `${q(it.label)} 라디오 버튼(초기 상태 ${it.checked ? "선택됨" : "선택 안 됨"})`;
+     default: return noun;
+   }
+@@ -1182,6 +1205,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     slider: "スライダー: M3 Expressive の太いトラック（高さ 16dp）と縦長のハンドル（幅 4dp・高さ 44dp）。ハンドルの左は primary、右は secondaryContainer。ドラッグで値を変えられる。",
+     text: "テキスト: 指定の sp サイズ。見出しは onSurface、説明文は onSurfaceVariant、行間はサイズの 1.3〜1.5 倍。タップしてもリップルなどの反応は付けない。",
+     image: "画像: 角丸 20dp、指定がなければ surfaceContainerHighest のプレースホルダー。アスペクト比を保って中央でクロップ。",
++    video: "動画プレーヤー: 角丸 20dp、16:9。ポスター画像（無い間は inverseSurface の暗い面）の上に、中央の 56dp の丸い再生ボタン（半透明の黒に白い play_arrow）と、下端に 4dp の進行バーと経過時間を置く。バーの進んだ部分は inversePrimary。",
+     camera: "カメラプレビュー: 角丸 20dp。端末のカメラ映像をこの領域に表示し、権限が無い間は inverseSurface の暗い面にカメラアイコンを置く。",
+     map: "地図: 角丸 20dp。地図 SDK のビューをこの領域に置き、読み込み中は surfaceContainerHighest に地図アイコンを置く。",
+     divider: "区切り線: 1dp の outlineVariant、左右に 16dp の余白。",
+@@ -1198,6 +1222,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     toolbar:
+       "フローティングツールバー: M3 Expressive の HorizontalFloatingToolbar。高さ 64dp、角は完全な丸、画面下端から 16dp 上に浮かせ、内容の上に重ねる。スタンダードは surfaceContainer、ビブラントは primaryContainer。中のアイコンボタンは 48dp。",
+     tabs: "タブ: M3 のプライマリタブ。高さ 48dp、ラベルは titleSmall、選択中のタブは primary の文字とラベル幅の 3dp インジケータ（上の角丸）、下に outlineVariant の区切り線。タブをタップすると内容が切り替わる。",
++    segmentedButtons:
++      "セグメント付きボタン: M3 の Segmented button。高さ 40dp、外枠は outline の 1dp 線、両端は完全な丸（ピル型）。セグメント間は outline の 1dp 区切り線。選択中のセグメントは secondaryContainer の塗りつぶしと onSecondaryContainer の文字・アイコン（先頭に check アイコンを添えてもよい）、未選択は透明な背景に onSurfaceVariant の文字。単一選択で、タップすると選択が切り替わる。",
+     radio: "ラジオボタン: 20dp の円。選択時は primary の枠と中央の点、未選択は onSurfaceVariant の枠。同じグループ内では 1 つだけ選べる。ラベルは右に bodyLarge。",
+   },
+   en: {
+@@ -1236,6 +1262,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     slider: "Sliders: the M3 Expressive thick track (16dp) with a tall handle (4×44dp). Primary on the left of the handle, secondaryContainer on the right. Dragging changes the value.",
+     text: "Text: the specified sp size; headings on onSurface, descriptions on onSurfaceVariant, line height 1.3–1.5× the size. No ripple or press feedback on tap.",
+     image: "Images: 20dp corners; a surfaceContainerHighest placeholder when none is provided. Keep the aspect ratio and center-crop.",
++    video: "Video player: 20dp corners, 16:9. Over the poster image (a dark inverseSurface pane while there is none) put a centered 56dp round play button (white play_arrow on translucent black) and, along the bottom, a 4dp progress bar with the elapsed time. The played part of the bar is inversePrimary.",
+     camera: "Camera preview: 20dp corners. Show the device camera feed in this area; while permission is missing, show a camera icon on a dark inverseSurface pane.",
+     map: "Map: 20dp corners. Place the map SDK view in this area; while it loads, show a map icon on surfaceContainerHighest.",
+     divider: "Dividers: 1dp outlineVariant with 16dp horizontal insets.",
+@@ -1252,6 +1279,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     toolbar:
+       "Floating toolbar: the M3 Expressive HorizontalFloatingToolbar. 64dp tall, fully rounded, floating 16dp above the bottom edge over the content. Standard uses surfaceContainer, vibrant uses primaryContainer. The icon buttons inside are 48dp.",
+     tabs: "Tabs: M3 primary tabs. 48dp tall, labels in titleSmall; the selected tab has primary text and a 3dp label-width indicator with rounded top corners, with an outlineVariant divider underneath. Tapping a tab switches the content.",
++    segmentedButtons:
++      "Segmented buttons: an M3 segmented button group. 40dp tall, a 1dp outline border, fully rounded ends (pill). A 1dp outline divider sits between segments. The selected segment fills with secondaryContainer and onSecondaryContainer text/icon (optionally a leading check icon); unselected segments show onSurfaceVariant text on a transparent background. Single-select; tapping a segment changes the selection.",
+     radio: "Radio buttons: 20dp circles. Selected shows a primary ring with a center dot, unselected an onSurfaceVariant ring. Only one in a group can be selected. Label on the right in bodyLarge.",
+   },
+   zh: {
+@@ -1289,6 +1318,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     slider: "滑块：M3 Expressive 的粗轨道（高 16dp）和竖长手柄（宽 4dp、高 44dp）。手柄左侧为 primary，右侧为 secondaryContainer。可拖动改变数值。",
+     text: "文本：指定的 sp 字号。标题用 onSurface，说明文字用 onSurfaceVariant，行高为字号的 1.3〜1.5 倍。点击时不加涟漪等反馈。",
+     image: "图片：圆角 20dp，未指定时使用 surfaceContainerHighest 的占位符。保持宽高比并居中裁剪。",
++    video: "视频播放器：圆角 20dp，16:9。在海报图（没有时为 inverseSurface 的深色面）上，居中放置 56dp 的圆形播放按钮（半透明黑底、白色 play_arrow），底部放 4dp 的进度条和已播放时间。进度条已播放部分为 inversePrimary。",
+     camera: "相机预览：圆角 20dp。在此区域显示设备相机画面；未获得权限时，在 inverseSurface 的深色面板上显示相机图标。",
+     map: "地图：圆角 20dp。在此区域放置地图 SDK 视图；加载期间在 surfaceContainerHighest 上显示地图图标。",
+     divider: "分割线：1dp 的 outlineVariant，左右留 16dp 边距。",
+@@ -1304,6 +1334,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     toolbar:
+       "悬浮工具栏：M3 Expressive 的 HorizontalFloatingToolbar。高 64dp，完全圆角，悬浮在距屏幕底部 16dp 处并覆盖在内容之上。标准样式用 surfaceContainer，鲜明样式用 primaryContainer。内部图标按钮 48dp。",
+     tabs: "标签页：M3 的主标签页。高 48dp，标签用 titleSmall，选中项文字为 primary 并带与标签同宽的 3dp 指示条（上方圆角），下方为 outlineVariant 分割线。点击标签切换内容。",
++    segmentedButtons:
++      "分段按钮：M3 的 Segmented button。高 40dp，1dp outline 描边，两端为完全圆角（胶囊形）。分段之间为 1dp outline 分割线。选中的分段填充 secondaryContainer，文字/图标为 onSecondaryContainer（前面可加 check 图标）；未选中为透明背景、onSurfaceVariant 文字。单选，点击切换选中项。",
+     radio: "单选按钮：20dp 圆形。选中时为 primary 的圆环加中心圆点，未选中为 onSurfaceVariant 圆环。同一组内只能选一个。标签在右侧，用 bodyLarge。",
+   },
+   ko: {
+@@ -1334,6 +1366,7 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     slider: "슬라이더: M3 Expressive의 두꺼운 16dp 트랙과 4×44dp 세로 핸들. 핸들 왼쪽은 primary, 오른쪽은 secondaryContainer이며 드래그로 값을 바꾼다.",
+     text: "텍스트: 지정된 sp 크기. 제목은 onSurface, 설명은 onSurfaceVariant, 줄 높이는 글자 크기의 1.3~1.5배. 탭 반응은 넣지 않는다.",
+     image: "이미지: 모서리 20dp. 이미지가 없으면 surfaceContainerHighest 자리표시자를 사용하고 비율을 유지해 가운데에서 자른다.",
++    video: "동영상 플레이어: 모서리 20dp, 16:9. 포스터 이미지(없으면 inverseSurface의 어두운 면) 위 중앙에 56dp 원형 재생 버튼(반투명 검정 위 흰색 play_arrow)을 두고, 아래쪽에 4dp 진행 바와 경과 시간을 둔다. 바의 재생된 부분은 inversePrimary.",
+     camera: "카메라 미리보기: 모서리 20dp. 이 영역에 기기 카메라 화면을 표시하고, 권한이 없는 동안은 inverseSurface의 어두운 면 위에 카메라 아이콘을 둔다.",
+     map: "지도: 모서리 20dp. 이 영역에 지도 SDK 뷰를 두고, 불러오는 동안은 surfaceContainerHighest 위에 지도 아이콘을 둔다.",
+     divider: "구분선: 1dp outlineVariant, 좌우 여백 16dp.",
+@@ -1346,6 +1379,8 @@ const STYLE_NOTES: Record<Lang, Partial<Record<Kind, string>>> = {
+     fabMenu: "FAB 메뉴: M3 Expressive FloatingActionButtonMenu. 닫혔을 때는 일반 FAB이고 탭하면 항목이 위로 차례로 나타나며 아이콘은 close로 바뀐다. 각 항목은 높이 56dp, 완전 둥근 모서리, 아이콘과 레이블을 포함한다.",
+     toolbar: "플로팅 도구 모음: M3 Expressive HorizontalFloatingToolbar. 높이 64dp, 완전 둥근 모서리로 화면 아래쪽에서 16dp 띄운다. 표준은 surfaceContainer, 비브런트는 primaryContainer, 내부 아이콘 버튼은 48dp.",
+     tabs: "탭: M3 기본 탭. 높이 48dp, 레이블 titleSmall. 선택 탭은 primary 텍스트와 레이블 너비의 3dp 표시기를 사용하고 아래에 outlineVariant 구분선을 둔다.",
++    segmentedButtons:
++      "세그먼트 버튼: M3 Segmented button. 높이 40dp, 1dp outline 테두리, 양 끝은 완전히 둥근 모양(필 형태). 세그먼트 사이는 1dp outline 구분선. 선택된 세그먼트는 secondaryContainer 배경과 onSecondaryContainer 텍스트/아이콘(앞에 체크 아이콘 추가 가능)으로 채워지고, 선택되지 않은 세그먼트는 투명 배경에 onSurfaceVariant 텍스트를 사용한다. 단일 선택이며 탭하면 선택이 바뀐다.",
+     radio: "라디오 버튼: 20dp 원형. 선택 시 primary 테두리와 가운데 점, 미선택 시 onSurfaceVariant 테두리. 그룹에서 하나만 선택되며 레이블은 오른쪽 bodyLarge.",
+   },
+ };
 diff --git a/lib/supabase.test.ts b/lib/supabase.test.ts
 new file mode 100644
-index 0000000..5098371
+index 0000000..9e064d7
 --- /dev/null
 +++ b/lib/supabase.test.ts
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,35 @@
 +import { describe, expect, it } from "vitest";
 +import { describeSupabaseError, getSupabase, isSupabaseConfigured } from "./supabase";
 +
@@ -942,6 +1521,10 @@ index 0000000..5098371
 +    expect(describeSupabaseError({ message: "Unauthorized: You do not have permissions to read from this Channel topic" })).toContain("Allow public access");
 +  });
 +
++  it("explains a missing realtime partition as a wait-and-retry", () => {
++    expect(describeSupabaseError({ message: "MissingPartition: Realtime was unable to find the expected messages partition" })).toContain("try again");
++  });
++
 +  it("copes with things that are not errors", () => {
 +    expect(describeSupabaseError(undefined)).toBe("Unknown error");
 +    expect(describeSupabaseError("boom")).toBe("boom");
@@ -956,10 +1539,10 @@ index 0000000..5098371
 +});
 diff --git a/lib/supabase.ts b/lib/supabase.ts
 new file mode 100644
-index 0000000..23f6203
+index 0000000..cf94b40
 --- /dev/null
 +++ b/lib/supabase.ts
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,41 @@
 +import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 +
 +/* One client for the whole page. Collaboration and cloud save both sign in through it,
@@ -995,11 +1578,180 @@ index 0000000..23f6203
 +  const hint =
 +    /anonymous/i.test(message) ? " — turn on Authentication › Sign In / Providers › Anonymous sign-ins."
 +    : /schema cache|does not exist|PGRST205|42P01/i.test(`${message}${code}`) ? " — run supabase/schema.sql in the SQL editor."
++    : /partition/i.test(message) ? " — Realtime has not created today's message partition yet. Wait a minute and try again; if it keeps happening, check that the project is not paused and look at Logs › Realtime."
 +    : /infinite recursion/i.test(message) ? " — re-run the latest supabase/schema.sql (it replaces the old policies)."
 +    : /unauthorized|permission|not allowed|row-level security/i.test(message) ? " — check the policies from supabase/schema.sql and that Realtime › Settings › Allow public access is off."
 +    : "";
 +  return `${message}${code}${hint}`;
 +}
+diff --git a/lib/tokens.ts b/lib/tokens.ts
+index 21d51e3..4dce53e 100644
+--- a/lib/tokens.ts
++++ b/lib/tokens.ts
+@@ -1,5 +1,5 @@
+ import type { CSSProperties } from "react";
+-import { FAB_MENU_TABS, KIND_TEXT, Lang, NAV_TABS, SPLIT_MENU_TABS, TAB_LABELS, getLang, t, SELECT_OPTIONS } from "./i18n";
++import { FAB_MENU_TABS, KIND_TEXT, Lang, NAV_TABS, SPLIT_MENU_TABS, TAB_LABELS, SEGMENT_LABELS, getLang, t, SELECT_OPTIONS } from "./i18n";
+ import { Contrast, isLightColor, schemeFromSeed } from "./color";
+ 
+ /* ---------- geometry ---------- */
+@@ -601,6 +601,7 @@ export type Kind =
+   | "slider"
+   | "text"
+   | "image"
++  | "video"
+   | "camera"
+   | "map"
+   | "divider"
+@@ -611,6 +612,7 @@ export type Kind =
+   | "fabMenu"
+   | "toolbar"
+   | "tabs"
++  | "segmentedButtons"
+   | "radio"
+   | "carousel"
+   | "datePicker"
+@@ -1328,6 +1330,25 @@ export const KIND_SPEC: Record<Kind, KindSpec> = {
+     defIcon: "image",
+     defSize: 200,
+   },
++  /* a video player: a still (the poster) with a play button and a progress bar over it */
++  video: {
++    label: "Video",
++    noun: "動画",
++    category: "content",
++    paletteIcon: "videocam",
++    w: CONTENT_W,
++    h: Math.round((CONTENT_W * 9) / 16),
++    radius: 20,
++    hasVariant: false,
++    hasLabel: false,
++    hasSupporting: false,
++    hasIcon: false,
++    size: { min: 96, max: PHONE_W, step: 4, icon: "width", presets: [HALF_W, CONTENT_W, PHONE_W] },
++    size2: { min: 72, max: PHONE_H, step: 4, icon: "height", presets: [120, 185, 280] },
++    defLabel: "",
++    defIcon: null,
++    defSize: CONTENT_W,
++  },
+   camera: {
+     label: "Camera",
+     noun: "カメラ",
+@@ -1577,6 +1598,26 @@ export const KIND_SPEC: Record<Kind, KindSpec> = {
+     defLabel: "選択肢",
+     defIcon: null,
+   },
++  /* a single-select row of connected segments: one outlined pill, a 1dp divider between each
++   * segment, the chosen one filled with secondaryContainer */
++  segmentedButtons: {
++    label: "Segmented Buttons",
++    noun: "セグメント付きボタン",
++    category: "inputs",
++    paletteIcon: "segment",
++    w: PHONE_W,
++    h: 40,
++    radius: 20,
++    hasVariant: false,
++    hasLabel: false,
++    hasSupporting: false,
++    hasIcon: false,
++    hasTabs: true,
++    size: { min: 160, max: PHONE_W, step: 4, icon: "width", presets: WIDTH_PRESETS },
++    defLabel: "",
++    defIcon: null,
++    defSize: PHONE_W,
++  },
+ };
+ 
+ export const KIND_ORDER: Kind[] = [
+@@ -1592,6 +1633,7 @@ export const KIND_ORDER: Kind[] = [
+   "navRail",
+   "toolbar",
+   "tabs",
++  "segmentedButtons",
+   "searchBar",
+   "card",
+   "listItem",
+@@ -1609,6 +1651,7 @@ export const KIND_ORDER: Kind[] = [
+   "timePicker",
+   "text",
+   "image",
++  "video",
+   "carousel",
+   "camera",
+   "map",
+@@ -1810,7 +1853,7 @@ export type ChoiceKind = (typeof CHOICE_KINDS)[number];
+ export const isChoice = (k: Kind): k is ChoiceKind => (CHOICE_KINDS as readonly string[]).includes(k);
+ /** the three pictures a screen shows: a picture, the camera's viewfinder and a map, each a box
+  *  with something different in it and the same panel around it */
+-export const PICTURE_KINDS = ["image", "camera", "map"] as const;
++export const PICTURE_KINDS = ["image", "video", "camera", "map"] as const;
+ export type PictureKind = (typeof PICTURE_KINDS)[number];
+ export const isPicture = (k: Kind): k is PictureKind => (PICTURE_KINDS as readonly string[]).includes(k);
+ /** the two fields that hold a value: a text field, and the dropdown that picks one from a list */
+@@ -2182,7 +2225,7 @@ export function fitHeight(it: Item, screenH: number): Item {
+ export function carryItemSize(it: Item, from: { w: number; h: number }, to: { w: number; h: number }): Item {
+   const spec = KIND_SPEC[it.kind];
+   const patch: Partial<Item> = {};
+-  const keepsShape = it.kind === "card" || it.kind === "image" || it.kind === "camera" || it.kind === "map";
++  const keepsShape = it.kind === "card" || it.kind === "image" || it.kind === "video" || it.kind === "camera" || it.kind === "map";
+   if (spec.size && (spec.size.icon === "width" || keepsShape)) {
+     /* only a size that is a width; a text size or an icon button's square are left alone */
+     const cur = it.size ?? spec.defSize ?? spec.w;
+@@ -2198,8 +2241,8 @@ export function carryItemSize(it: Item, from: { w: number; h: number }, to: { w:
+     else if (cur > contentWidth(to.w) && it.kind !== "box" && it.kind !== "bottomSheet") patch.size = contentWidth(to.w);
+   }
+   if ((it.kind === "box" || it.kind === "bottomSheet" || it.kind === "navRail") && (it.size2 ?? spec.h) === from.h) patch.size2 = to.h;
+-  /* a camera or map the author gave a height keeps its aspect ratio when its width changes */
+-  if ((it.kind === "camera" || it.kind === "map") && it.size2 !== undefined && patch.size !== undefined) {
++  /* a video, camera or map the author gave a height keeps its aspect ratio when its width changes */
++  if ((it.kind === "video" || it.kind === "camera" || it.kind === "map") && it.size2 !== undefined && patch.size !== undefined) {
+     const cur = it.size ?? spec.defSize ?? spec.w;
+     patch.size2 = Math.round((it.size2 * patch.size) / cur);
+   }
+@@ -2426,6 +2469,8 @@ export function defaultTabsFor(kind: Kind): NavTab[] {
+   switch (kind) {
+     case "tabs":
+       return TAB_LABELS[getLang()].map((label) => ({ icon: "", label }));
++    case "segmentedButtons":
++      return SEGMENT_LABELS[getLang()].map((label) => ({ icon: "", label }));
+     case "select":
+       return SELECT_OPTIONS[getLang()].map((label) => ({ icon: "", label }));
+     case "fabMenu":
+@@ -2481,7 +2526,7 @@ export function makeItem(kind: Kind): Item {
+     it.tabs = defaultTabs();
+     it.railExpanded = false;
+   }
+-  if (kind === "tabs" || kind === "fabMenu" || kind === "select" || kind === "splitButton") it.tabs = defaultTabsFor(kind);
++  if (kind === "tabs" || kind === "fabMenu" || kind === "select" || kind === "splitButton" || kind === "segmentedButtons") it.tabs = defaultTabsFor(kind);
+   if (kind === "toolbar") it.tabs = defaultTabsFor(kind).slice(0, 4);
+   return it;
+ }
+@@ -2529,6 +2574,7 @@ export function sizeOf(it: Item, widths: Record<string, number>) {
+     case "toolbar":
+       return { w: toolbarWidth(it), h: s.h };
+     case "tabs":
++    case "segmentedButtons":
+       return { w: n, h: s.h };
+     case "text":
+       return { w: widths[it.id] ?? 120, h: Math.round(n * 1.3) };
+@@ -2541,6 +2587,8 @@ export function sizeOf(it: Item, widths: Record<string, number>) {
+     /* a picture is as tall as it was made; square until it is given a height of its own */
+     case "image":
+       return { w: n, h: it.size2 ?? n };
++    case "video":
++      return { w: n, h: it.size2 ?? Math.round((n * 9) / 16) };
+     case "camera":
+       return { w: n, h: it.size2 ?? Math.round((n * 4) / 3) };
+     case "map":
+@@ -2629,6 +2677,7 @@ export function baseRadii(it: Item): Radii {
+     case "image":
+       if (it.corners) return { ...it.corners };
+     // falls through
++    case "video":
+     case "camera":
+     case "map":
+       return uniformRadii(it.radiusTop ?? scaleR(s.radius));
 diff --git a/package-lock.json b/package-lock.json
 index dfe90ba..8bcf1c5 100644
 --- a/package-lock.json
@@ -1239,10 +1991,10 @@ index dfe90ba..8bcf1c5 100644
        "os": [
 diff --git a/supabase/schema.sql b/supabase/schema.sql
 new file mode 100644
-index 0000000..657f8bf
+index 0000000..a3cd3ed
 --- /dev/null
 +++ b/supabase/schema.sql
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,175 @@
 +-- Database for realtime collaboration (lib/collaboration.ts) and cloud save (lib/cloud.ts).
 +-- Run the whole file in your Supabase project's SQL editor. It is safe to run again:
 +-- every policy is dropped and recreated, so it also replaces the first version of this
@@ -1301,12 +2053,24 @@ index 0000000..657f8bf
 +revoke all on function public.is_room_member(text) from public;
 +grant execute on function public.is_room_member(text) to authenticated;
 +
-+-- first-version policy names, dropped so an earlier run does not leave them behind
-+drop policy if exists "create own room" on public.collab_rooms;
-+drop policy if exists "owner can delete room" on public.collab_rooms;
-+drop policy if exists "members can read their room" on public.collab_rooms;
-+drop policy if exists "join a room" on public.collab_room_members;
-+drop policy if exists "members can read roommates" on public.collab_room_members;
++-- Drop EVERY existing policy on these tables, whatever it is called. Dropping only the
++-- names this file used before is not enough: a policy added by hand or by an earlier
++-- setup under another name keeps the recursion alive and the error does not go away.
++do $$
++declare
++  pol record;
++begin
++  for pol in
++    select schemaname, tablename, policyname
++    from pg_policies
++    where schemaname = 'public'
++      and tablename in ('collab_rooms', 'collab_room_members', 'cloud_projects')
++  loop
++    execute format('drop policy %I on %I.%I', pol.policyname, pol.schemaname, pol.tablename);
++  end loop;
++end
++$$;
++
 +drop policy if exists "room members can receive realtime messages" on realtime.messages;
 +drop policy if exists "room members can send realtime messages" on realtime.messages;
 +

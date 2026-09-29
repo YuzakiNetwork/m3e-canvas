@@ -33,6 +33,7 @@ export function describeSupabaseError(error: unknown): string {
   const hint =
     /anonymous/i.test(message) ? " — turn on Authentication › Sign In / Providers › Anonymous sign-ins."
     : /schema cache|does not exist|PGRST205|42P01/i.test(`${message}${code}`) ? " — run supabase/schema.sql in the SQL editor."
+    : /partition/i.test(message) ? " — Realtime has not created today's message partition yet. Wait a minute and try again; if it keeps happening, check that the project is not paused and look at Logs › Realtime."
     : /infinite recursion/i.test(message) ? " — re-run the latest supabase/schema.sql (it replaces the old policies)."
     : /unauthorized|permission|not allowed|row-level security/i.test(message) ? " — check the policies from supabase/schema.sql and that Realtime › Settings › Allow public access is off."
     : "";

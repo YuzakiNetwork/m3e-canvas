@@ -33,7 +33,7 @@ export const SEED_TEXT: Record<Lang, { favorite: string; share: string; inbox: s
 export function translateDefaultText(value: string, kind: string, field: "label" | "supporting" | "tab", lang: Lang): string {
   for (const { key: from } of LANGS) {
     if (field === "tab") {
-      const labels = (l: Lang) => kind === "tabs" ? TAB_LABELS[l] : kind === "select" ? SELECT_OPTIONS[l] : (kind === "fabMenu" ? FAB_MENU_TABS[l] : kind === "splitButton" ? SPLIT_MENU_TABS[l] : NAV_TABS[l]).map((tab) => tab.label);
+      const labels = (l: Lang) => kind === "tabs" ? TAB_LABELS[l] : kind === "segmentedButtons" ? SEGMENT_LABELS[l] : kind === "select" ? SELECT_OPTIONS[l] : (kind === "fabMenu" ? FAB_MENU_TABS[l] : kind === "splitButton" ? SPLIT_MENU_TABS[l] : NAV_TABS[l]).map((tab) => tab.label);
       const index = labels(from).indexOf(value);
       if (index >= 0) return labels(lang)[index] ?? value;
     } else {
@@ -682,6 +682,7 @@ export const KIND_TEXT: Record<
     slider: { noun: "スライダー" },
     text: { noun: "テキスト", label: "見出し" },
     image: { noun: "画像" },
+    video: { noun: "動画" },
     camera: { noun: "カメラ" },
     map: { noun: "地図" },
     divider: { noun: "区切り線" },
@@ -692,6 +693,7 @@ export const KIND_TEXT: Record<
     fabMenu: { noun: "FAB メニュー" },
     toolbar: { noun: "ツールバー" },
     tabs: { noun: "タブ" },
+    segmentedButtons: { noun: "セグメント付きボタン" },
     radio: { noun: "ラジオボタン", label: "選択肢" },
     carousel: { noun: "カルーセル" },
     datePicker: { noun: "日付ピッカー", label: "3月17日（月）" },
@@ -720,6 +722,7 @@ export const KIND_TEXT: Record<
     slider: { noun: "slider" },
     text: { noun: "text", label: "Headline" },
     image: { noun: "image" },
+    video: { noun: "video" },
     camera: { noun: "camera" },
     map: { noun: "map" },
     divider: { noun: "divider" },
@@ -730,6 +733,7 @@ export const KIND_TEXT: Record<
     fabMenu: { noun: "FAB menu" },
     toolbar: { noun: "toolbar" },
     tabs: { noun: "tabs" },
+    segmentedButtons: { noun: "segmented buttons" },
     radio: { noun: "radio button", label: "Option" },
     carousel: { noun: "carousel" },
     datePicker: { noun: "date picker", label: "Mon, Mar 17" },
@@ -758,6 +762,7 @@ export const KIND_TEXT: Record<
     slider: { noun: "滑块" },
     text: { noun: "文本", label: "标题" },
     image: { noun: "图片" },
+    video: { noun: "视频" },
     camera: { noun: "相机" },
     map: { noun: "地图" },
     divider: { noun: "分割线" },
@@ -768,6 +773,7 @@ export const KIND_TEXT: Record<
     fabMenu: { noun: "FAB 菜单" },
     toolbar: { noun: "工具栏" },
     tabs: { noun: "标签页" },
+    segmentedButtons: { noun: "分段按钮" },
     radio: { noun: "单选按钮", label: "选项" },
     carousel: { noun: "轮播" },
     datePicker: { noun: "日期选择器", label: "3月17日 周一" },
@@ -796,6 +802,7 @@ export const KIND_TEXT: Record<
     slider: { noun: "슬라이더" },
     text: { noun: "텍스트", label: "제목" },
     image: { noun: "이미지" },
+    video: { noun: "동영상" },
     camera: { noun: "카메라" },
     map: { noun: "지도" },
     divider: { noun: "구분선" },
@@ -806,6 +813,7 @@ export const KIND_TEXT: Record<
     fabMenu: { noun: "FAB 메뉴" },
     toolbar: { noun: "도구 모음" },
     tabs: { noun: "탭" },
+    segmentedButtons: { noun: "세그먼트 버튼" },
     radio: { noun: "라디오 버튼", label: "옵션" },
     carousel: { noun: "캐러셀" },
     datePicker: { noun: "날짜 선택기", label: "3월 17일 (월)" },
@@ -819,6 +827,14 @@ export const TAB_LABELS: Record<Lang, string[]> = {
   en: ["For you", "Following", "Trending", "New", "Saved"],
   zh: ["推荐", "关注", "热门", "最新", "已保存"],
   ko: ["추천", "팔로잉", "인기", "새 항목", "저장됨"],
+};
+
+/** default labels of a segmented button group */
+export const SEGMENT_LABELS: Record<Lang, string[]> = {
+  ja: ["日", "週", "月"],
+  en: ["Day", "Week", "Month"],
+  zh: ["日", "周", "月"],
+  ko: ["일", "주", "월"],
 };
 
 /** default entries of a FAB menu */

@@ -510,7 +510,7 @@ export function PartInspector({
       )}
 
       {/* ---------- entries ---------- */}
-      {(kind === "bottomNav" || kind === "navRail" || kind === "tabs" || kind === "select") && (
+      {(kind === "bottomNav" || kind === "navRail" || kind === "tabs" || kind === "segmentedButtons" || kind === "select") && (
         <Section id="part-entries" icon={kind === "select" ? "list" : "view_column"} title={t(kind === "select" ? "options" : "tabs", lang)} p={p}>
           <EntryList item={item} onChange={onChange} p={p} icons={kind !== "tabs" && kind !== "select"} selectable clearable={kind === "select"} />
         </Section>
@@ -558,7 +558,7 @@ export function PartInspector({
           </div>
         </Section>
       )}
-      {kind === "image" && (
+      {(kind === "image" || kind === "video") && (
         <Section id="part-image" icon="image" title={t("image", lang)} p={p}>
           <ImageRow key={item.id} value={item.src} onChange={(src) => onChange({ src })} p={p} />
         </Section>

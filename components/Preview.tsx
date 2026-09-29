@@ -173,7 +173,7 @@ function flippedLook(it: Item): Item {
  *  controls whose whole purpose is being tapped -- a row in a list, a dropdown, a switch. An
  *  indicator, a slider, a picture is not something that is pressed, so it stays as it is drawn.
  *  A destination inside a bar has its own hit area, and lights up through that. */
-const TAP_LIT: Kind[] = [...RIPPLE_KINDS, "listItem", "select", "checkbox", "radio", "switch"];
+const TAP_LIT: Kind[] = [...RIPPLE_KINDS, "listItem", "select", "checkbox", "radio", "switch", "segmentedButtons"];
 /** about how long a browser's smooth scroll takes to come to rest */
 const SMOOTH_SCROLL_MS = 420;
 type Shape = { key: string; style: React.CSSProperties };
@@ -501,7 +501,7 @@ function Tappable({
     /* hit areas sit inside the scrolling layer, one per tab, so they move with the row */
     const n = item.tabs?.length ?? 0;
     for (let i = 0; i < n; i++) slots.push({ key: `tab:${i}`, style: { left: i * SCROLL_TAB_W, width: SCROLL_TAB_W, top: 0, bottom: 0, borderRadius: 16 } });
-  } else if (onSlot && (item.kind === "bottomNav" || item.kind === "tabs")) {
+  } else if (onSlot && (item.kind === "bottomNav" || item.kind === "tabs" || item.kind === "segmentedButtons")) {
     const n = item.tabs?.length ?? 0;
     for (let i = 0; i < n; i++)
       slots.push({ key: `tab:${i}`, style: { left: `${(i / n) * 100}%`, width: `${100 / n}%`, top: 0, bottom: item.kind === "bottomNav" ? NAV_BAR_H : 0, borderRadius: 16 } });
@@ -941,6 +941,7 @@ function Screen({
             if (splitOpens(shown) && flipped.has(it.id)) shown = { ...shown, [menuUp]: splitMenuRisesAt(it, g.y, frame) };
             if (it.kind === "slider" && values[it.id] !== undefined) shown = { ...shown, value: values[it.id] };
             if (it.kind === "select" && values[it.id] !== undefined) shown = { ...shown, selected: values[it.id] };
+            if (it.kind === "segmentedButtons" && values[it.id] !== undefined) shown = { ...shown, selected: values[it.id] };
             const navKind = it.kind === "bottomNav" || it.kind === "navRail" || it.kind === "tabs";
             /* bars with the same destinations are one bar to the visitor: the choice follows them across screens */
             const navKey = navKind ? `nav:${it.kind}:${(it.tabs ?? []).map((t) => t.label).join("|")}` : "";
@@ -965,8 +966,13 @@ function Screen({
                 railAnimating={railMotion?.items.has(it.id)}
                 onTap={tap}
                 onSlot={
-                  slotActions || navKind || it.kind === "splitButton"
+                  slotActions || navKind || it.kind === "splitButton" || it.kind === "segmentedButtons"
                     ? (slot, animate) => {
+                        /* a segmented button is a local single choice, not a navigation target */
+                        if (it.kind === "segmentedButtons" && slot.startsWith("tab:")) {
+                          onValue(it.id, Number(slot.slice(4)));
+                          return;
+                        }
                         /* the half with the words does what the button itself does, and a menu
                            standing open gives way to it */
                         if (it.kind === "splitButton" && slot === SPLIT_MAIN_SLOT) {

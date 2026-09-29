@@ -1329,6 +1329,33 @@ function Body({ item, p, tabScroll, menuShown }: { item: Item; p: Palette; tabSc
         </div>
       );
 
+    case "video": {
+      /* a player: the poster (or a dark ground), a play button in the middle and a progress
+         bar along the bottom. On its own layer, like the camera, so a quick resize never
+         shows the screen through it. */
+      const bar = Math.max(12, Math.min(20, Math.round((item.size ?? 200) * 0.06)));
+      return (
+        <div style={{ position: "relative", height: "100%", overflow: "hidden", color: "#fff", background: p.inverseSurface, transform: "translateZ(0)" }}>
+          {item.src && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.src} alt="" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          )}
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "45%", background: "linear-gradient(transparent, rgba(0,0,0,0.6))" }} />
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+            <div style={{ width: 56, height: 56, borderRadius: 28, background: "rgba(0,0,0,0.5)", display: "grid", placeItems: "center" }}>
+              <Icon name="play_arrow" size={36} />
+            </div>
+          </div>
+          <div style={{ position: "absolute", left: bar, right: bar, bottom: bar, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.4)", overflow: "hidden" }}>
+              <div style={{ width: "35%", height: "100%", background: p.inversePrimary }} />
+            </div>
+            <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>0:42 / 2:10</span>
+          </div>
+        </div>
+      );
+    }
+
     case "camera":
       /* a viewfinder: the live feed is dark, with focus brackets and a shutter row. The body
          paints the dark ground itself, on a layer of its own, so a box resized in a hurry never
@@ -1665,6 +1692,52 @@ function Body({ item, p, tabScroll, menuShown }: { item: Item; p: Palette; tabSc
       );
     }
 
+    case "segmentedButtons": {
+      const tabs = item.tabs ?? [];
+      const n = Math.max(1, tabs.length);
+      const selected = Math.min(item.selected ?? 0, Math.max(0, tabs.length - 1));
+      return (
+        <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+          {tabs.map((tab, i) => {
+            const on = i === selected;
+            return (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  padding: "0 12px",
+                  boxSizing: "border-box",
+                  background: on ? p.secondaryContainer : "transparent",
+                  color: on ? p.onSecondaryContainer : p.onSurfaceVariant,
+                  borderRight: i < n - 1 ? `1px solid ${p.outline}` : "none",
+                }}
+              >
+                {on && <Icon name="check" size={18} />}
+                {tab.icon && <Icon name={tab.icon} size={18} />}
+                {tab.label && (
+                  <span
+                    style={{
+                      fontSize: 14,
+                      fontWeight: w(500, 600),
+                      maxWidth: "100%",
+                      ...ellipsis,
+                    }}
+                  >
+                    {tab.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     case "loadingIndicator": {
       const s = item.size ?? 48;
       return (
@@ -1724,6 +1797,8 @@ export function boxStyle(item: Item, p: Palette): React.CSSProperties {
         : { background: p.surfaceContainer, border: "none", color: p.onSurfaceVariant };
     case "tabs":
       return { background: p.surface, border: "none", color: p.onSurface };
+    case "segmentedButtons":
+      return { background: "transparent", border: `1px solid ${p.outline}`, color: p.onSurfaceVariant };
     case "searchBar":
       return item.variant === "outlined"
         ? { background: p.surface, border: `1px solid ${p.outline}`, color: p.onSurface }
@@ -1742,6 +1817,7 @@ export function boxStyle(item: Item, p: Palette): React.CSSProperties {
     case "image":
     case "map":
       return { background: p.surfaceContainerHighest, border: "none" };
+    case "video":
     case "camera":
       return { background: p.inverseSurface, border: "none", color: p.inverseOnSurface };
     case "listItem": {
